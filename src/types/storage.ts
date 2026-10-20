@@ -10,8 +10,6 @@ export interface StorageItem {
   path?: string
 }
 
-export type View = 'files' | 'transfers' | 'recent' | 'settings'
-
 export interface StorageBucket {
   id: string
   name: string

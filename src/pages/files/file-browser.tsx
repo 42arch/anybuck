@@ -1,18 +1,25 @@
-import type { StorageItem } from '@/features/storage/models'
+import type { FormEvent } from 'react'
+import type { StorageItem } from '@/types/storage'
 import {
-  ArrowClockwise,
-  ArrowDown,
-  CaretRight,
-  CloudArrowUp,
-  Folder,
-  GridFour,
-  House,
-  ListBullets,
-  MagnifyingGlass,
-  Plus,
-  SidebarSimple,
-  SlidersHorizontal,
-  Trash,
+  ArrowClockwiseIcon,
+  ArrowDownIcon,
+  ArrowsOutCardinalIcon,
+  CaretRightIcon,
+  CloudArrowUpIcon,
+  CopyIcon,
+  DotsThreeIcon,
+  DownloadSimpleIcon,
+  FolderIcon,
+  GridFourIcon,
+  HouseIcon,
+  ListBulletsIcon,
+  MagnifyingGlassIcon,
+  PlusIcon,
+  SidebarSimpleIcon,
+  SlidersHorizontalIcon,
+  TrashIcon,
+  UploadSimpleIcon,
+  XIcon,
 } from '@phosphor-icons/react'
 import { Fragment, useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -20,7 +27,10 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Input } from '@/components/ui/input'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -30,6 +40,7 @@ import { DeleteConfirmDialog } from './delete-confirm-dialog'
 import { FileDetails } from './file-details'
 import { FileKindIcon } from './file-kind-icon'
 import { fileKindSurfaceClass } from './file-kind-styles'
+import { ObjectDestinationDialog } from './object-destination-dialog'
 
 interface FileBrowserProps {
   bucketName: string
@@ -37,6 +48,7 @@ interface FileBrowserProps {
   items: StorageItem[]
   focusedItem?: StorageItem
   selected: string[]
+  selectedItems: StorageItem[]
   search: string
   grid: boolean
   showDetails: boolean
@@ -53,9 +65,20 @@ interface FileBrowserProps {
   onSortChange: () => void
   onRefresh: () => void
   onCopyKey: (key: string) => void
+  onCreateFolder: (name: string) => Promise<void>
+  isCreatingFolder?: boolean
   onUnavailableAction: (label: string) => void
   onDelete: (items: StorageItem[]) => void | Promise<void>
+  connectionId?: string
+  onMove: (items: StorageItem[], destinationPrefix: string) => Promise<boolean>
+  isMoving?: boolean
+  onCopyObjects: (items: StorageItem[], destinationPrefix: string) => Promise<boolean>
+  isCopying?: boolean
+  onDownload: (items: StorageItem[]) => void
+  isDownloading?: boolean
   onConnect: () => void
+  onUpload: () => void
+  isUploading?: boolean
   isLoading?: boolean
   isLoadingMore?: boolean
   loadError?: string
@@ -72,6 +95,7 @@ export function FileBrowser(props: FileBrowserProps) {
     items,
     focusedItem,
     selected,
+    selectedItems,
     search,
     grid,
     showDetails,
@@ -88,9 +112,20 @@ export function FileBrowser(props: FileBrowserProps) {
     onSortChange,
     onRefresh,
     onCopyKey,
+    onCreateFolder,
+    isCreatingFolder = false,
     onUnavailableAction,
     onDelete,
+    connectionId,
+    onMove,
+    isMoving = false,
+    onCopyObjects,
+    isCopying = false,
+    onDownload,
+    isDownloading = false,
     onConnect,
+    onUpload,
+    isUploading = false,
     isLoading = false,
     isLoadingMore = false,
     loadError = '',
@@ -100,16 +135,46 @@ export function FileBrowser(props: FileBrowserProps) {
     isDeleting = false,
   } = props
   const [deleteTargets, setDeleteTargets] = useState<StorageItem[]>([])
+  const [destinationAction, setDestinationAction] = useState<{ operation: 'move' | 'copy', items: StorageItem[] } | null>(null)
+  const [createFolderOpen, setCreateFolderOpen] = useState(false)
+  const [folderName, setFolderName] = useState('')
+  const [createFolderError, setCreateFolderError] = useState('')
   const parts = path ? path.split('/') : []
   const currentName = parts[parts.length - 1] ?? bucketName
   const allSelected = items.length > 0 && items.every(item => selected.includes(item.id))
 
+  async function submitCreateFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = folderName.trim()
+    if (!name) {
+      setCreateFolderError('请输入文件夹名称。')
+      return
+    }
+    setCreateFolderError('')
+    try {
+      await onCreateFolder(name)
+      setCreateFolderOpen(false)
+      setFolderName('')
+    }
+    catch (error) {
+      setCreateFolderError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  function openDestination(operation: 'move' | 'copy', items: StorageItem[]) {
+    if (!connectionId) {
+      onUnavailableAction(operation === 'move' ? '移动' : '复制')
+      return
+    }
+    setDestinationAction({ operation, items })
+  }
+
   return (
     <div className={cn('grid min-h-0 min-w-0 flex-1 gap-4', showDetails && 'xl:grid-cols-[minmax(0,1fr)_15rem]')}>
       <Card className="h-full min-h-0 min-w-0 gap-0">
-        <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b px-4 py-4">
+        <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b px-4 py-4 pt-0">
           <CardTitle className="flex min-w-0 items-center gap-2">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><Folder className="size-4" weight="duotone" /></span>
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><FolderIcon className="size-4" weight="duotone" /></span>
             <span className="truncate">{currentName}</span>
           </CardTitle>
           <CardDescription className="min-w-0 truncate">
@@ -117,11 +182,25 @@ export function FileBrowser(props: FileBrowserProps) {
             {' 个项目位于当前目录'}
           </CardDescription>
           <CardAction className="row-span-2 flex items-center gap-2 self-center">
-            <Button variant="outline" onClick={() => onUnavailableAction('新建文件夹')}>
-              <Plus data-icon="inline-start" />
+            <Button onClick={onUpload} disabled={isUploading}>
+              <UploadSimpleIcon data-icon="inline-start" />
+              上传文件
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!hasRemoteConnection) {
+                  onUnavailableAction('新建文件夹')
+                  return
+                }
+                setCreateFolderError('')
+                setCreateFolderOpen(true)
+              }}
+            >
+              <PlusIcon data-icon="inline-start" />
               新建文件夹
             </Button>
-            <Button variant="outline" size="icon" aria-label="刷新文件列表" onClick={onRefresh}><ArrowClockwise /></Button>
+            <Button variant="outline" size="icon" aria-label="刷新文件列表" onClick={onRefresh}><ArrowClockwiseIcon /></Button>
           </CardAction>
         </CardHeader>
 
@@ -132,103 +211,154 @@ export function FileBrowser(props: FileBrowserProps) {
               <AlertDescription>{loadError}</AlertDescription>
             </Alert>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink render={<button type="button" onClick={() => onNavigate('')} aria-label="存储桶根目录" />}><House className="size-4" /></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  {parts.length === 0
-                    ? <BreadcrumbPage>{bucketName}</BreadcrumbPage>
-                    : <BreadcrumbLink render={<button type="button" onClick={() => onNavigate('')} />}>{bucketName}</BreadcrumbLink>}
-                </BreadcrumbItem>
-                {parts.map((part, index) => {
-                  const nextPath = parts.slice(0, index + 1).join('/')
-                  return (
-                    <Fragment key={nextPath}>
-                      <BreadcrumbSeparator />
-                      <BreadcrumbItem>
-                        {index === parts.length - 1
-                          ? <BreadcrumbPage>{part}</BreadcrumbPage>
-                          : <BreadcrumbLink render={<button type="button" onClick={() => onNavigate(nextPath)} />}>{part}</BreadcrumbLink>}
-                      </BreadcrumbItem>
-                    </Fragment>
-                  )
-                })}
-              </BreadcrumbList>
-            </Breadcrumb>
-            <div className="flex flex-wrap items-center gap-2">
-              <InputGroup className="w-44 sm:w-52">
-                <InputGroupAddon><MagnifyingGlass /></InputGroupAddon>
-                <InputGroupInput aria-label="搜索当前目录" placeholder="搜索当前目录..." value={search} onChange={event => onSearchChange(event.target.value)} />
-              </InputGroup>
-              <Button variant="outline" size="icon" aria-label="切换名称排序" onClick={onSortChange}><SlidersHorizontal /></Button>
-              <ToggleGroup
-                variant="outline"
-                size="sm"
-                spacing={0}
-                value={[grid ? 'grid' : 'list']}
-                onValueChange={(value) => {
-                  if (value.length > 0)
-                    onGridChange(value[0] === 'grid')
-                }}
-                aria-label="文件视图"
-              >
-                <ToggleGroupItem value="list" aria-label="列表视图"><ListBullets /></ToggleGroupItem>
-                <ToggleGroupItem value="grid" aria-label="网格视图"><GridFour /></ToggleGroupItem>
-              </ToggleGroup>
-              <Button variant={showDetails ? 'secondary' : 'outline'} size="icon" aria-label="显示详情" aria-pressed={showDetails} onClick={() => onDetailsChange(!showDetails)}><SidebarSimple /></Button>
-            </div>
-          </div>
-
-          {selected.length > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#f8e9dc] bg-[#fff8f2] px-4 py-2 text-xs text-[#a76139]">
-              <strong>
-                已选择
-                {selected.length}
-                {' '}
-                个项目
-              </strong>
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" onClick={() => onUnavailableAction('下载')}>下载</Button>
-                <Button variant="ghost" onClick={() => onUnavailableAction('移动')}>移动</Button>
-                <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDeleteTargets(items.filter(item => selected.includes(item.id)))}>
-                  <Trash data-icon="inline-start" />
-                  删除
-                </Button>
-                <Button variant="ghost" onClick={onClearSelection}>取消选择</Button>
+          <div className="relative border-b">
+            <div
+              className={cn('flex flex-wrap items-center justify-between gap-3 px-4 py-3', selected.length > 0 && 'invisible')}
+              aria-hidden={selected.length > 0}
+              inert={selected.length > 0}
+            >
+              <Breadcrumb>
+                <BreadcrumbList>
+                  <BreadcrumbItem>
+                    <BreadcrumbLink render={<button type="button" onClick={() => onNavigate('')} aria-label="存储桶根目录" />}><HouseIcon className="size-4" /></BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    {parts.length === 0
+                      ? <BreadcrumbPage>{bucketName}</BreadcrumbPage>
+                      : <BreadcrumbLink render={<button type="button" onClick={() => onNavigate('')} />}>{bucketName}</BreadcrumbLink>}
+                  </BreadcrumbItem>
+                  {parts.map((part, index) => {
+                    const nextPath = parts.slice(0, index + 1).join('/')
+                    return (
+                      <Fragment key={nextPath}>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                          {index === parts.length - 1
+                            ? <BreadcrumbPage>{part}</BreadcrumbPage>
+                            : <BreadcrumbLink render={<button type="button" onClick={() => onNavigate(nextPath)} />}>{part}</BreadcrumbLink>}
+                        </BreadcrumbItem>
+                      </Fragment>
+                    )
+                  })}
+                </BreadcrumbList>
+              </Breadcrumb>
+              <div className="flex flex-wrap items-center gap-2">
+                <InputGroup className="w-44 sm:w-52">
+                  <InputGroupAddon><MagnifyingGlassIcon /></InputGroupAddon>
+                  <InputGroupInput aria-label="搜索当前目录" placeholder="搜索当前目录..." value={search} onChange={event => onSearchChange(event.target.value)} />
+                </InputGroup>
+                <Button variant="outline" size="icon" aria-label="切换名称排序" onClick={onSortChange}><SlidersHorizontalIcon /></Button>
+                <ToggleGroup
+                  variant="outline"
+                  size="sm"
+                  spacing={0}
+                  value={[grid ? 'grid' : 'list']}
+                  onValueChange={(value) => {
+                    if (value.length > 0)
+                      onGridChange(value[0] === 'grid')
+                  }}
+                  aria-label="文件视图"
+                >
+                  <ToggleGroupItem value="list" aria-label="列表视图"><ListBulletsIcon /></ToggleGroupItem>
+                  <ToggleGroupItem value="grid" aria-label="网格视图"><GridFourIcon /></ToggleGroupItem>
+                </ToggleGroup>
+                <Button variant={showDetails ? 'secondary' : 'outline'} size="icon" aria-label="显示详情" aria-pressed={showDetails} onClick={() => onDetailsChange(!showDetails)}><SidebarSimpleIcon /></Button>
               </div>
             </div>
-          )}
+            {selected.length > 0 && (
+              <div className="absolute inset-0 flex items-center justify-between gap-2 bg-primary/5 px-4 text-xs text-foreground motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150">
+                <strong className="min-w-0 truncate font-medium">
+                  已选择
+                  {' '}
+                  {selected.length}
+                  {' '}
+                  个项目
+                </strong>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button variant="ghost" size="sm" disabled={isDownloading} onClick={() => onDownload(items.filter(item => selected.includes(item.id)))}>下载</Button>
+                  <Button variant="ghost" size="sm" className="hidden sm:inline-flex" disabled={isCopying} onClick={() => openDestination('copy', selectedItems)}>复制</Button>
+                  <Button variant="ghost" size="sm" className="hidden sm:inline-flex" disabled={isMoving} onClick={() => openDestination('move', selectedItems)}>移动</Button>
+                  <Button variant="ghost" size="sm" className="hidden text-destructive hover:text-destructive sm:inline-flex" onClick={() => setDeleteTargets(items.filter(item => selected.includes(item.id)))}>
+                    <TrashIcon data-icon="inline-start" />
+                    删除
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="sm:hidden" />}>
+                      <DotsThreeIcon data-icon="inline-start" />
+                      更多
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuGroup>
+                        <DropdownMenuItem disabled={isCopying} onClick={() => openDestination('copy', selectedItems)}>复制</DropdownMenuItem>
+                        <DropdownMenuItem disabled={isMoving} onClick={() => openDestination('move', selectedItems)}>移动</DropdownMenuItem>
+                        <DropdownMenuItem variant="destructive" onClick={() => setDeleteTargets(items.filter(item => selected.includes(item.id)))}>删除</DropdownMenuItem>
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={onClearSelection}>取消选择</Button>
+                  <Button variant="ghost" size="icon-sm" className="sm:hidden" aria-label="取消选择" onClick={onClearSelection}><XIcon /></Button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {items.length === 0
             ? (
                 <Empty className="min-h-72">
                   <EmptyHeader>
-                    <EmptyMedia variant="icon">{isLoading ? <Spinner /> : hasRemoteConnection ? <MagnifyingGlass /> : <CloudArrowUp />}</EmptyMedia>
+                    <EmptyMedia variant="icon">{isLoading ? <Spinner /> : hasRemoteConnection ? <MagnifyingGlassIcon /> : <CloudArrowUpIcon />}</EmptyMedia>
                     <EmptyTitle>{isLoading ? '正在读取对象…' : loadError ? '对象列表读取失败' : !hasRemoteConnection ? '尚未连接存储桶' : search ? '没有找到匹配的文件' : 'Bucket 暂无对象'}</EmptyTitle>
                     <EmptyDescription>{isLoading ? '正在从 Cloudflare R2 获取当前目录。' : loadError ? '请检查连接配置或网络后重试。' : !hasRemoteConnection ? '连接 Cloudflare R2 后即可浏览对象。' : search ? '试试其他搜索词' : '这个 Bucket 或目录当前没有对象。'}</EmptyDescription>
                   </EmptyHeader>
-                  {!hasRemoteConnection && !isLoading && <Button onClick={onConnect}>前往设置并连接 R2</Button>}
+                  {!hasRemoteConnection && !isLoading && <Button onClick={onConnect}>添加并连接 R2</Button>}
                 </Empty>
               )
             : grid
               ? (
                   <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-4">
                     {items.map(item => (
-                      <Button
-                        key={item.id}
-                        variant={focusedItem?.id === item.id ? 'secondary' : 'outline'}
-                        className="h-auto min-w-0 flex-col gap-2 px-3 py-5"
-                        onClick={() => onFocus(item.id)}
-                        onDoubleClick={() => onOpenFolder(item)}
-                      >
-                        <FileKindIcon kind={item.kind} size={28} />
-                        <span className="max-w-full truncate">{item.name}</span>
-                        <span className="text-xs text-muted-foreground">{item.kind === 'folder' ? '文件夹' : item.size}</span>
-                      </Button>
+                      <div key={item.id} className="relative min-w-0">
+                        <Button
+                          variant={focusedItem?.id === item.id ? 'secondary' : 'outline'}
+                          className="h-auto w-full min-w-0 flex-col gap-2 px-3 py-5"
+                          onClick={() => onFocus(item.id)}
+                          onDoubleClick={() => onOpenFolder(item)}
+                        >
+                          <FileKindIcon kind={item.kind} size={28} />
+                          <span className="max-w-full truncate">{item.name}</span>
+                          <span className="text-xs text-muted-foreground">{item.kind === 'folder' ? '文件夹' : item.size}</span>
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="absolute top-2 right-2" aria-label={`${item.name} 的更多操作`} />}>
+                            <DotsThreeIcon />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem disabled={isDownloading} onClick={() => onDownload([item])}>
+                              <DownloadSimpleIcon />
+                              下载
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={isCopying} onClick={() => openDestination('copy', [item])}>
+                              <CopyIcon />
+                              复制
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={isMoving} onClick={() => openDestination('move', [item])}>
+                              <ArrowsOutCardinalIcon />
+                              移动
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() => {
+                                onFocus(item.id)
+                                setDeleteTargets([item])
+                              }}
+                            >
+                              <TrashIcon />
+                              删除
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     ))}
                   </div>
                 )
@@ -240,7 +370,7 @@ export function FileBrowser(props: FileBrowserProps) {
                         <TableHead>
                           <Button variant="ghost" className="px-0" onClick={onSortChange}>
                             名称
-                            <ArrowDown data-icon="inline-end" className={cn('transition-transform', sortAscending && 'rotate-180')} />
+                            <ArrowDownIcon data-icon="inline-end" className={cn('transition-transform', sortAscending && 'rotate-180')} />
                           </Button>
                         </TableHead>
                         <TableHead className="w-24">文件大小</TableHead>
@@ -266,7 +396,7 @@ export function FileBrowser(props: FileBrowserProps) {
                                       }}
                                     >
                                       {item.name}
-                                      <CaretRight data-icon="inline-end" />
+                                      <CaretRightIcon data-icon="inline-end" />
                                     </Button>
                                   )
                                 : <span className="truncate font-medium">{item.name}</span>}
@@ -274,19 +404,36 @@ export function FileBrowser(props: FileBrowserProps) {
                           </TableCell>
                           <TableCell className="text-muted-foreground">{item.size}</TableCell>
                           <TableCell className="hidden text-muted-foreground lg:table-cell">{item.updated}</TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={`删除 ${item.name}`}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                onFocus(item.id)
-                                setDeleteTargets([item])
-                              }}
-                            >
-                              <Trash />
-                            </Button>
+                          <TableCell onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`${item.name} 的更多操作`} />}>
+                                <DotsThreeIcon />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem disabled={isDownloading} onClick={() => onDownload([item])}>
+                                  <DownloadSimpleIcon />
+                                  下载
+                                </DropdownMenuItem>
+                                <DropdownMenuItem disabled={isCopying} onClick={() => openDestination('copy', [item])}>
+                                  <CopyIcon />
+                                  复制
+                                </DropdownMenuItem>
+                                <DropdownMenuItem disabled={isMoving} onClick={() => openDestination('move', [item])}>
+                                  <ArrowsOutCardinalIcon />
+                                  移动
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onClick={() => {
+                                    onFocus(item.id)
+                                    setDeleteTargets([item])
+                                  }}
+                                >
+                                  <TrashIcon />
+                                  删除
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -311,7 +458,7 @@ export function FileBrowser(props: FileBrowserProps) {
             : <span>{hasRemoteConnection ? '已加载全部对象' : '第 1 页'}</span>}
         </CardFooter>
       </Card>
-      {showDetails && <FileDetails item={focusedItem} path={path} onCopyKey={onCopyKey} onOpenFolder={onOpenFolder} onUnavailableAction={onUnavailableAction} onDelete={item => setDeleteTargets([item])} />}
+      {showDetails && <FileDetails item={focusedItem} path={path} onCopyKey={onCopyKey} onOpenFolder={onOpenFolder} onDownload={onDownload} isDownloading={isDownloading} onDelete={item => setDeleteTargets([item])} />}
       <DeleteConfirmDialog
         open={deleteTargets.length > 0}
         names={deleteTargets.map(item => item.name)}
@@ -323,6 +470,49 @@ export function FileBrowser(props: FileBrowserProps) {
           setDeleteTargets([])
         }}
       />
+      {destinationAction && connectionId && (
+        <ObjectDestinationDialog
+          connectionId={connectionId}
+          items={destinationAction.items}
+          currentPath={path}
+          operation={destinationAction.operation}
+          isPending={destinationAction.operation === 'move' ? isMoving : isCopying}
+          onOpenChange={open => !open && setDestinationAction(null)}
+          onConfirm={destinationAction.operation === 'move' ? onMove : onCopyObjects}
+        />
+      )}
+      <Dialog open={createFolderOpen} onOpenChange={open => !isCreatingFolder && setCreateFolderOpen(open)}>
+        <DialogContent>
+          <form onSubmit={submitCreateFolder} className="flex flex-col gap-4">
+            <DialogHeader>
+              <DialogTitle>在当前目录新建文件夹</DialogTitle>
+              <DialogDescription>
+                将在
+                {' '}
+                {path ? `${path}/` : `${bucketName}/`}
+                {' '}
+                下创建文件夹。
+              </DialogDescription>
+            </DialogHeader>
+            <Input
+              autoFocus
+              aria-label="文件夹名称"
+              placeholder="文件夹名称"
+              value={folderName}
+              onChange={event => setFolderName(event.target.value)}
+              disabled={isCreatingFolder}
+            />
+            {createFolderError && <p className="text-xs text-destructive">{createFolderError}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={isCreatingFolder} onClick={() => setCreateFolderOpen(false)}>取消</Button>
+              <Button type="submit" disabled={isCreatingFolder || !folderName.trim()}>
+                {isCreatingFolder && <Spinner data-icon="inline-start" />}
+                {isCreatingFolder ? '正在创建…' : '创建文件夹'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

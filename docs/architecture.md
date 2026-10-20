@@ -7,13 +7,14 @@ MVP v0.1
 ## 当前实现状态（2026-10-20）
 
 - Tauri 后端已通过 `aws-sdk-s3` 支持 Cloudflare R2 连接校验和指定 Bucket 的 `ListObjectsV2` 预览，包含 continuation token 分页。
-- 支持同时添加和切换多个 R2 连接；连接元数据保存在应用数据目录，每个连接的凭证分别保存在系统凭证库。应用启动时仅读取已保存连接，所有连接默认为断开状态，单击桶名可切换当前选择（即使连接断开），双击或使用右键菜单可建立连接；未勾选记住时连接只在当前进程内有效。旧版单连接配置会在读取时兼容迁移。
+- 支持同时添加和切换多个 R2 连接；连接元数据保存在应用数据目录，每个连接的凭证分别保存在系统凭证库。应用启动时仅读取已保存连接，所有连接默认为断开状态，单击桶名可切换当前选择（即使连接断开），双击桶名可直接连接；右键菜单可切换、连接或断开。设置页按分组提供左侧选项导航，右侧显示所选分组的具体设置；“连接管理”分组右侧列出全部连接并提供删除操作。添加连接在右侧 Drawer 中进行；未勾选记住时连接只在当前进程内有效。旧版单连接配置会在读取时兼容迁移。
 - 侧边栏按服务提供商分组，再列出 Bucket，连接树可折叠；添加连接在右侧 Drawer 中进行，连接名称可选，留空时使用 Bucket 名称。本期不显示用户或登录入口。
-- 文件浏览器支持单个及批量删除对象；选择虚拟目录时会分页枚举其前缀下的对象，并按 S3 批次删除，界面会显示确认和部分失败结果。
+- 文件浏览器支持在当前目录上传多个文件、下载文件或递归下载虚拟目录、创建虚拟文件夹，以及单个和批量删除、复制、移动对象；上传前会确认文件数量和目标目录，上传期间右下角显示当前文件名。文件由 Rust 流式读写，不经前端或 IPC 中转；下载时会校验对象 Key 对应的本地路径，防止路径穿越。选择虚拟目录删除、复制或移动时会分页枚举其前缀下的对象。复制在同一 Bucket 内保留源对象，移动先复制后删除；大对象使用分片复制。目标目录已有同名项目时跳过，并向界面反馈部分失败结果。
+- 设置页增加“下载管理”分组，可选择和清除默认下载路径；该偏好保存在本机，下载时直接使用所设目录。首次下载时若尚未设置，会要求选择目录并将其保存为默认路径。
 - 文件管理、传输任务、最近访问和设置等主视图通过 React Router 的 Hash 路由切换。
-- 前端通过 TanStack Query 管理 Tauri API 请求；对象列表按连接和目录缓存，删除后使对应连接的对象列表失效。
-- 前端不再填充演示 Bucket、对象、最近访问或传输任务；未连接时展示空状态和 R2 设置入口。
-- 上传、下载、其他写操作及传输任务管理仍未实现。下文其余设计描述的是目标架构，不代表已经完成。
+- 前端通过 TanStack Query 管理对象列表和已保存连接查询缓存；Zustand 管理当前进程内的活动连接和会话连接。对象列表按连接和目录缓存，删除后使对应连接的对象列表失效。
+- 前端不再填充演示 Bucket、对象、最近访问或传输任务；未连接时展示空状态和连接抽屉入口。
+- 上传和下载已接入 Rust 传输队列，支持最多两个文件同时传输、取消、手动重试、同名下载覆盖或跳过，以及文件夹下载的父子任务展示。任务元数据保存在应用数据目录的 `transfers.json`，最近保留 100 个已结束的根任务；应用重启后将排队或运行中的任务标记为中断，不自动续传。当前不展示字节进度、不支持暂停、自动重试、分片上传或恢复传输。除上述实现外，下文其余设计描述仍是目标架构，不代表已经完成。
 
 ## 一、项目定位与目标
 
@@ -27,7 +28,7 @@ MVP v0.1
 - 桌面端： Tauri 2
 - 存储引擎： Rust + `aws-sdk-s3`
 - 任务调度： Tokio
-- 本地数据： SQLite
+- 本地数据：传输任务元数据暂存应用数据目录 JSON；SQLite 是后续扩展方向
 - 凭证管理： 系统凭证库或 Stronghold
 - 后端服务： 不需要
 
@@ -356,10 +357,10 @@ interface TransferTask {
 
 关键设计：
 
-- 使用 Tokio Semaphore 控制并发。
+- 使用 Tokio Semaphore 控制并发；当前文件级并发上限为 2。
 - 通过任务 ID 实现取消和重试。
-- 传输元数据保存在 SQLite。
-- 使用 Tauri Channel 将进度变化推送给 React。
+- 传输元数据当前保存在应用数据目录的 JSON 文件中。
+- 使用 Tauri 事件推送任务状态变化，页面打开时先读取任务快照。
 - UI 关闭窗口时应明确是隐藏到托盘继续上传，还是终止进程。
 
 Tauri Channel 适合长时间任务的进度消息传输，避免对每次进度更新都调用独立 IPC 命令。
@@ -456,15 +457,15 @@ interface ObjectPage {
 
 ## 七、本地持久化设计
 
-SQLite 建议只保存元数据，不缓存整个 Bucket 的所有对象。
+传输任务当前使用应用数据目录中的 JSON 文件保存元数据，不缓存整个 Bucket 的对象。若后续引入任务查询、历史筛选或分片恢复，再迁移到 SQLite。
 
 | 表                    | 主要字段                                        | 作用           |
 | -------------------- | ------------------------------------------- | ------------ |
 | `connections`        | id、name、provider、endpoint、region、secret_ref | 连接配置         |
 | `connection_buckets` | connection_id、bucket_name                   | 手动添加的 Bucket |
-| `transfer_tasks`     | id、connection_id、bucket、key、status、progress | 传输队列         |
-| `upload_sessions`    | task_id、upload_id、part_size                 | 续传会话         |
-| `upload_parts`       | task_id、part_number、etag                    | 已完成分片        |
+| `transfer_tasks`     | id、connection_id、bucket、key、status、progress | 后续迁移的传输队列 |
+| `upload_sessions`    | task_id、upload_id、part_size                 | 后续续传会话      |
+| `upload_parts`       | task_id、part_number、etag                    | 后续已完成分片     |
 | `settings`           | key、value                                   | 用户偏好         |
 
 凭证单独保存在安全存储中。macOS 可以使用 Keychain，Windows 使用 Credential Manager；也可以选择 Tauri Stronghold 提供跨平台加密存储。
@@ -489,9 +490,11 @@ cloud-storage-manager/
 │   ├── api/
 │   │   └── storage.ts
 │   ├── components/
-│   ├── features/
-│   │   └── storage/
-│   │       └── models.ts
+│   ├── store/
+│   │   └── r2-connection-store.ts
+│   ├── types/
+│   │   ├── storage.ts
+│   │   └── view.ts
 │   ├── pages/
 │   │   ├── files/
 │   │   ├── transfers/
@@ -527,7 +530,8 @@ cloud-storage-manager/
 
 - `pages/<view>/`：按路由视图组织页面及仅供该页面使用的组件。
 - `api/`：封装 React 与 Tauri 命令之间的 IPC 调用。
-- `features/`：放置跨页面共享的业务模型和功能逻辑。
+- `store/`：放置 Zustand 全局状态。
+- `types/`：放置跨页面共享的数据模型和视图类型。
 - `storage/traits.rs`：服务商无关的能力接口。
 - `storage/s3/`：使用 `aws-sdk-s3` 实现主要对象操作。
 - `storage/providers/r2.rs`：R2 Endpoint、鉴权配置和能力差异。
@@ -588,7 +592,7 @@ S3 客户端、连接验证、Bucket 浏览、ListObjectsV2、分页
 | 大文件处理   | 流式 I/O + Multipart               |
 | 传输调度    | Rust Tokio                       |
 | 文件浏览    | Key Prefix + 服务端分页               |
-| 持久化     | SQLite                           |
+| 持久化     | 任务元数据使用应用数据目录 JSON；SQLite 为后续扩展方向 |
 | 凭证管理    | 系统安全凭证库或 Stronghold              |
 | 服务端     | 无                                |
 

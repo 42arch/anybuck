@@ -1,4 +1,4 @@
-import { ClockCounterClockwise } from '@phosphor-icons/react'
+import { ClockCounterClockwiseIcon } from '@phosphor-icons/react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 
@@ -12,7 +12,7 @@ export function RecentView() {
       <CardContent>
         <Empty>
           <EmptyHeader>
-            <EmptyMedia variant="icon"><ClockCounterClockwise /></EmptyMedia>
+            <EmptyMedia variant="icon"><ClockCounterClockwiseIcon /></EmptyMedia>
             <EmptyTitle>最近访问记录尚未接入</EmptyTitle>
             <EmptyDescription>后续版本可在这里查看最近打开的对象。</EmptyDescription>
           </EmptyHeader>

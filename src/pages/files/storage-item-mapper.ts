@@ -1,5 +1,5 @@
 import type { R2Object } from '@/api/storage'
-import type { FileKind, StorageItem } from '@/features/storage/models'
+import type { FileKind, StorageItem } from '@/types/storage'
 
 export function toStorageItems(objects: R2Object[]): StorageItem[] {
   return objects.map((object) => {

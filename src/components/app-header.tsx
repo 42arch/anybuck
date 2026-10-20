@@ -1,4 +1,4 @@
-import { Bell, CaretRight } from '@phosphor-icons/react'
+import { BellIcon, CaretRightIcon } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -16,7 +16,7 @@ export function AppHeader({ title, connected }: AppHeaderProps) {
         <SidebarTrigger aria-label="切换侧栏" />
         <Separator orientation="vertical" className="h-5" />
         <span className="hidden text-muted-foreground sm:inline">工作台</span>
-        <CaretRight className="hidden size-3 text-muted-foreground sm:inline" />
+        <CaretRightIcon className="hidden size-3 text-muted-foreground sm:inline" />
         <strong className="truncate font-medium">{title}</strong>
       </div>
       <div className="flex items-center gap-2">
@@ -27,7 +27,7 @@ export function AppHeader({ title, connected }: AppHeaderProps) {
           {connected ? 'R2 已连接' : '未连接'}
         </Badge>
         <Button variant="ghost" size="icon" aria-label="通知" disabled>
-          <Bell />
+          <BellIcon />
         </Button>
       </div>
     </header>

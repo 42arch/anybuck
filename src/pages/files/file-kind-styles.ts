@@ -1,4 +1,4 @@
-import type { FileKind } from '@/features/storage/models'
+import type { FileKind } from '@/types/storage'
 
 const kindColors: Record<FileKind, string> = {
   folder: 'text-[#e6a642]',

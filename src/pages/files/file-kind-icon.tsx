@@ -1,5 +1,5 @@
-import type { FileKind } from '@/features/storage/models'
-import { FilePdf, FileText, FileZip, Folder, Image } from '@phosphor-icons/react'
+import type { FileKind } from '@/types/storage'
+import { FilePdfIcon, FileTextIcon, FileZipIcon, FolderIcon, ImageIcon } from '@phosphor-icons/react'
 import { cn } from '@/lib/utils'
 import { fileKindColorClass } from './file-kind-styles'
 
@@ -13,10 +13,10 @@ export function FileKindIcon({ kind, size = 18, className }: FileKindIconProps) 
   const iconProps = { size, weight: 'duotone' as const, className: cn(fileKindColorClass(kind), className) }
 
   switch (kind) {
-    case 'folder': return <Folder {...iconProps} />
-    case 'image': return <Image {...iconProps} />
-    case 'document': return <FilePdf {...iconProps} />
-    case 'archive': return <FileZip {...iconProps} />
-    default: return <FileText {...iconProps} />
+    case 'folder': return <FolderIcon {...iconProps} />
+    case 'image': return <ImageIcon {...iconProps} />
+    case 'document': return <FilePdfIcon {...iconProps} />
+    case 'archive': return <FileZipIcon {...iconProps} />
+    default: return <FileTextIcon {...iconProps} />
   }
 }

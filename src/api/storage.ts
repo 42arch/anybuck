@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
 export interface ConnectR2Request {
   connectionId?: string
@@ -38,6 +39,44 @@ export interface DeleteR2ObjectsResult {
   failedKeys: string[]
 }
 
+export interface MoveR2ObjectsResult {
+  movedCount: number
+  failed: { key: string, reason: string }[]
+}
+
+export interface CopyR2ObjectsResult {
+  copiedCount: number
+  failed: { key: string, reason: string }[]
+}
+
+export interface DownloadR2ObjectsResult {
+  downloadedCount: number
+  failedKeys: string[]
+}
+
+export interface TransferTask {
+  id: string
+  parentId: string | null
+  operation: 'upload' | 'download' | 'folder'
+  connectionId: string
+  bucket: string
+  displayName: string
+  objectKey: string
+  localPath: string
+  relativePath: string
+  destinationRoot: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'skipped'
+  error: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export interface DownloadPlanSummary {
+  planId: string
+  conflicts: string[]
+  fileCount: number
+}
+
 export interface R2ConnectionResult extends R2ObjectPage {
   connectionId: string
   name: string
@@ -75,4 +114,65 @@ export function listR2Objects(connectionId: string, prefix: string, continuation
 
 export function deleteR2Objects(connectionId: string, keys: string[]) {
   return invoke<DeleteR2ObjectsResult>('delete_r2_objects', { connectionId, keys })
+}
+
+export function moveR2Objects(connectionId: string, keys: string[], destinationPrefix: string) {
+  return invoke<MoveR2ObjectsResult>('move_r2_objects', { connectionId, keys, destinationPrefix })
+}
+
+export function copyR2Objects(connectionId: string, keys: string[], destinationPrefix: string) {
+  return invoke<CopyR2ObjectsResult>('copy_r2_objects', { connectionId, keys, destinationPrefix })
+}
+
+export function createR2Folder(connectionId: string, prefix: string, name: string) {
+  return invoke<void>('create_r2_folder', { connectionId, prefix, name })
+}
+
+export function uploadR2File(connectionId: string, prefix: string, localPath: string) {
+  return invoke<void>('upload_r2_file', { connectionId, prefix, localPath })
+}
+
+export function downloadR2Objects(connectionId: string, prefix: string, keys: string[], destinationPath: string) {
+  return invoke<DownloadR2ObjectsResult>('download_r2_objects', {
+    connectionId,
+    prefix,
+    keys,
+    destinationPath,
+  })
+}
+
+export function listTransferTasks() {
+  return invoke<TransferTask[]>('list_transfer_tasks')
+}
+
+export function onTransferTaskUpdated(callback: (task: TransferTask) => void) {
+  return listen<TransferTask>('transfer-task-updated', event => callback(event.payload))
+}
+
+export function onTransferHistoryCleared(callback: () => void) {
+  return listen('transfer-history-cleared', callback)
+}
+
+export function enqueueR2Uploads(connectionId: string, prefix: string, localPaths: string[]) {
+  return invoke<TransferTask[]>('enqueue_r2_uploads', { connectionId, prefix, localPaths })
+}
+
+export function prepareR2Download(connectionId: string, prefix: string, keys: string[], destinationPath: string) {
+  return invoke<DownloadPlanSummary>('prepare_r2_download', { connectionId, prefix, keys, destinationPath })
+}
+
+export function enqueueR2Download(planId: string, conflictAction: 'overwrite' | 'skip') {
+  return invoke<TransferTask[]>('enqueue_r2_download', { planId, conflictAction })
+}
+
+export function cancelTransferTask(taskId: string) {
+  return invoke<void>('cancel_transfer_task', { taskId })
+}
+
+export function retryTransferTask(taskId: string) {
+  return invoke<TransferTask>('retry_transfer_task', { taskId })
+}
+
+export function clearTransferHistory() {
+  return invoke<void>('clear_transfer_history')
 }

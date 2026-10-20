@@ -1,5 +1,5 @@
-import type { StorageItem } from '@/features/storage/models'
-import { Copy, DownloadSimple, Folders, Info, Trash } from '@phosphor-icons/react'
+import type { StorageItem } from '@/types/storage'
+import { CopyIcon, DownloadSimpleIcon, FoldersIcon, InfoIcon, TrashIcon } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -13,11 +13,12 @@ interface FileDetailsProps {
   path: string
   onCopyKey: (key: string) => void
   onOpenFolder: (item: StorageItem) => void
-  onUnavailableAction: (label: string) => void
+  onDownload: (items: StorageItem[]) => void
+  isDownloading?: boolean
   onDelete: (item: StorageItem) => void
 }
 
-export function FileDetails({ item, path, onCopyKey, onOpenFolder, onUnavailableAction, onDelete }: FileDetailsProps) {
+export function FileDetails({ item, path, onCopyKey, onOpenFolder, onDownload, isDownloading = false, onDelete }: FileDetailsProps) {
   if (!item) {
     return (
       <Card size="sm" className="h-full min-h-72">
@@ -25,7 +26,7 @@ export function FileDetails({ item, path, onCopyKey, onOpenFolder, onUnavailable
         <CardContent className="flex flex-1 items-center">
           <Empty>
             <EmptyHeader>
-              <EmptyMedia variant="icon"><Info /></EmptyMedia>
+              <EmptyMedia variant="icon"><InfoIcon /></EmptyMedia>
               <EmptyTitle>选择一个项目</EmptyTitle>
               <EmptyDescription>查看文件或文件夹的详细信息</EmptyDescription>
             </EmptyHeader>
@@ -73,24 +74,24 @@ export function FileDetails({ item, path, onCopyKey, onOpenFolder, onUnavailable
       </CardContent>
       <CardFooter className="flex gap-2">
         <Button variant="outline" className="flex-1" onClick={() => onCopyKey(key)}>
-          <Copy data-icon="inline-start" />
+          <CopyIcon data-icon="inline-start" />
           复制 Key
         </Button>
         {item.kind === 'folder'
           ? (
               <Button className="flex-1" onClick={() => onOpenFolder(item)}>
-                <Folders data-icon="inline-start" />
+                <FoldersIcon data-icon="inline-start" />
                 打开
               </Button>
             )
           : (
-              <Button className="flex-1" onClick={() => onUnavailableAction('下载')}>
-                <DownloadSimple data-icon="inline-start" />
+              <Button className="flex-1" disabled={isDownloading} onClick={() => onDownload([item])}>
+                <DownloadSimpleIcon data-icon="inline-start" />
                 下载
               </Button>
             )}
         <Button variant="outline" size="icon" aria-label={`删除 ${item.name}`} onClick={() => onDelete(item)}>
-          <Trash />
+          <TrashIcon />
         </Button>
       </CardFooter>
     </Card>

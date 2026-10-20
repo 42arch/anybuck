@@ -6,9 +6,9 @@ use aws_sdk_s3::{
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Mutex,
         atomic::{AtomicU64, Ordering},
@@ -16,6 +16,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager, State};
+use tokio::{fs::File, io::AsyncWriteExt};
 
 const PAGE_SIZE: i32 = 100;
 const DELETE_BATCH_SIZE: usize = 1000;
@@ -23,6 +24,7 @@ const KEYRING_SERVICE: &str = "com.cloudstore.r2";
 const KEYRING_USERNAME: &str = "primary";
 const PROFILE_FILE: &str = "r2-connection.json";
 static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_TEMP_FILE_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Default)]
 pub struct R2ConnectionState {
@@ -89,6 +91,13 @@ pub struct R2ObjectPage {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteR2ObjectsResult {
     deleted_count: usize,
+    failed_keys: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadR2ObjectsResult {
+    downloaded_count: usize,
     failed_keys: Vec<String>,
 }
 
@@ -325,6 +334,389 @@ pub async fn delete_r2_objects(
     }
 
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn create_r2_folder(
+    connection_id: String,
+    prefix: String,
+    name: String,
+    state: State<'_, R2ConnectionState>,
+) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("请输入文件夹名称。".to_string());
+    }
+    if name == "." || name == ".." || name.contains('/') || name.contains('\\') {
+        return Err("文件夹名称不能包含路径分隔符或使用 .、..。".to_string());
+    }
+
+    let (client, bucket) = {
+        let connections = state
+            .connections
+            .lock()
+            .map_err(|_| "R2 连接状态不可用，请重启应用后重试。".to_string())?;
+        let connection = connections
+            .get(&connection_id)
+            .ok_or_else(|| "R2 会话已失效，请重新连接。".to_string())?;
+        (connection.client.clone(), connection.bucket.clone())
+    };
+
+    let prefix = prefix.trim_matches('/');
+    let key = if prefix.is_empty() {
+        format!("{name}/")
+    } else {
+        format!("{prefix}/{name}/")
+    };
+
+    client
+        .put_object()
+        .bucket(bucket)
+        .key(key)
+        .body(aws_sdk_s3::primitives::ByteStream::from_static(b""))
+        .send()
+        .await
+        .map_err(|error| format_r2_error(&error))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn upload_r2_file(
+    connection_id: String,
+    prefix: String,
+    local_path: String,
+    state: State<'_, R2ConnectionState>,
+) -> Result<(), String> {
+    let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
+    upload_file(&client, &bucket, &prefix, Path::new(&local_path)).await
+}
+
+pub(crate) fn client_for_connection(
+    connection_id: &str,
+    state: &R2ConnectionState,
+) -> Result<(Client, String), String> {
+    let connections = state
+        .connections
+        .lock()
+        .map_err(|_| "R2 连接状态不可用，请重启应用后重试。".to_string())?;
+    let connection = connections
+        .get(connection_id)
+        .ok_or_else(|| "R2 会话已失效，请重新连接。".to_string())?;
+    Ok((connection.client.clone(), connection.bucket.clone()))
+}
+
+pub(crate) async fn upload_file(
+    client: &Client,
+    bucket: &str,
+    prefix: &str,
+    path: &Path,
+) -> Result<(), String> {
+    let metadata = fs::metadata(path).map_err(|error| format!("无法读取所选文件：{error}"))?;
+    if !metadata.is_file() {
+        return Err("所选路径不是文件。".to_string());
+    }
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "无法读取所选文件名。".to_string())?;
+    let prefix = prefix.trim_matches('/');
+    let key = if prefix.is_empty() {
+        file_name.to_string()
+    } else {
+        format!("{prefix}/{file_name}")
+    };
+    let body = aws_sdk_s3::primitives::ByteStream::from_path(path)
+        .await
+        .map_err(|error| format!("无法读取所选文件：{error}"))?;
+    client
+        .put_object()
+        .bucket(bucket)
+        .key(key)
+        .content_length(metadata.len() as i64)
+        .body(body)
+        .send()
+        .await
+        .map_err(|error| format_r2_error(&error))?;
+    Ok(())
+}
+
+pub(crate) async fn download_file(
+    client: &Client,
+    bucket: &str,
+    key: &str,
+    relative_path: &str,
+    destination_root: &Path,
+    overwrite: bool,
+) -> Result<bool, String> {
+    let destination = safe_download_path(destination_root, relative_path)?;
+    let parent = destination
+        .parent()
+        .ok_or_else(|| "无法确定下载文件夹。".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("无法创建下载文件夹：{error}"))?;
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|error| format!("无法访问下载文件夹：{error}"))?;
+    if !canonical_parent.starts_with(destination_root)
+        || fs::symlink_metadata(&destination)
+            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err("下载路径不安全。".to_string());
+    }
+    if destination.exists() && !overwrite {
+        return Ok(false);
+    }
+    let output = client
+        .get_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await
+        .map_err(|error| format_r2_error(&error))?;
+    let temp_path = parent.join(format!(
+        ".cloudstore-{}-{}.part",
+        std::process::id(),
+        NEXT_TEMP_FILE_ID.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut cleanup = TempDownload::new(temp_path.clone());
+    let mut file = File::create(&temp_path)
+        .await
+        .map_err(|error| format!("无法创建下载文件：{error}"))?;
+    let mut body = output.body.into_async_read();
+    tokio::io::copy(&mut body, &mut file)
+        .await
+        .map_err(|error| format!("下载文件失败：{error}"))?;
+    file.flush()
+        .await
+        .map_err(|error| format!("写入下载文件失败：{error}"))?;
+    drop(file);
+    if overwrite && destination.exists() {
+        fs::remove_file(&destination).map_err(|error| format!("无法覆盖现有文件：{error}"))?;
+    }
+    fs::rename(&temp_path, &destination).map_err(|error| format!("无法保存下载文件：{error}"))?;
+    cleanup.disarm();
+    Ok(true)
+}
+
+struct TempDownload {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl TempDownload {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TempDownload {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn download_r2_objects(
+    connection_id: String,
+    prefix: String,
+    keys: Vec<String>,
+    destination_path: String,
+    state: State<'_, R2ConnectionState>,
+) -> Result<DownloadR2ObjectsResult, String> {
+    if keys.is_empty() {
+        return Err("请先选择要下载的文件或文件夹。".to_string());
+    }
+
+    let (client, bucket) = {
+        let connections = state
+            .connections
+            .lock()
+            .map_err(|_| "R2 连接状态不可用，请重启应用后重试。".to_string())?;
+        let connection = connections
+            .get(&connection_id)
+            .ok_or_else(|| "R2 会话已失效，请重新连接。".to_string())?;
+        (connection.client.clone(), connection.bucket.clone())
+    };
+
+    let destination_root = PathBuf::from(destination_path)
+        .canonicalize()
+        .map_err(|error| format!("无法访问所选下载目录：{error}"))?;
+    if !destination_root.is_dir() {
+        return Err("所选下载位置不是目录。".to_string());
+    }
+
+    let normalized_prefix = if prefix.trim_matches('/').is_empty() {
+        String::new()
+    } else {
+        format!("{}/", prefix.trim_matches('/'))
+    };
+    let mut files = BTreeMap::<String, String>::new();
+    let mut failed_keys = Vec::new();
+
+    for key in keys {
+        if !key.starts_with(&normalized_prefix) {
+            return Err("所选对象不属于当前目录。".to_string());
+        }
+
+        if key.ends_with('/') {
+            let relative_directory = key
+                .strip_prefix(&normalized_prefix)
+                .ok_or_else(|| "无法解析所选文件夹路径。".to_string())?;
+            match safe_download_path(&destination_root, relative_directory) {
+                Ok(path) => {
+                    if fs::create_dir_all(&path).is_err() {
+                        failed_keys.push(key.clone());
+                        continue;
+                    }
+                    match path.canonicalize() {
+                        Ok(canonical_path) if canonical_path.starts_with(&destination_root) => {}
+                        _ => {
+                            failed_keys.push(key.clone());
+                            continue;
+                        }
+                    }
+                }
+                Err(_) => {
+                    failed_keys.push(key.clone());
+                    continue;
+                }
+            }
+
+            let mut continuation_token = None;
+            loop {
+                let mut request = client
+                    .list_objects_v2()
+                    .bucket(&bucket)
+                    .prefix(&key)
+                    .max_keys(PAGE_SIZE);
+                if let Some(token) = continuation_token.as_deref() {
+                    request = request.continuation_token(token);
+                }
+                let page = request
+                    .send()
+                    .await
+                    .map_err(|error| format_r2_error(&error))?;
+                for object in page.contents() {
+                    let Some(object_key) = object.key() else {
+                        continue;
+                    };
+                    if object_key.ends_with('/') {
+                        continue;
+                    }
+                    let Some(relative_key) = object_key.strip_prefix(&normalized_prefix) else {
+                        failed_keys.push(object_key.to_string());
+                        continue;
+                    };
+                    files.insert(relative_key.to_string(), object_key.to_string());
+                }
+                continuation_token = page.next_continuation_token().map(ToOwned::to_owned);
+                if continuation_token.is_none() {
+                    break;
+                }
+            }
+        } else {
+            let Some(relative_key) = key.strip_prefix(&normalized_prefix) else {
+                return Err("所选对象不属于当前目录。".to_string());
+            };
+            files.insert(relative_key.to_string(), key);
+        }
+    }
+
+    let mut result = DownloadR2ObjectsResult {
+        downloaded_count: 0,
+        failed_keys,
+    };
+    for (relative_key, object_key) in files {
+        let destination = match safe_download_path(&destination_root, &relative_key) {
+            Ok(path) => path,
+            Err(_) => {
+                result.failed_keys.push(object_key);
+                continue;
+            }
+        };
+        let Some(parent) = destination.parent() else {
+            result.failed_keys.push(object_key);
+            continue;
+        };
+        if fs::create_dir_all(parent).is_err() {
+            result.failed_keys.push(object_key);
+            continue;
+        }
+        let Ok(canonical_parent) = parent.canonicalize() else {
+            result.failed_keys.push(object_key);
+            continue;
+        };
+        if !canonical_parent.starts_with(&destination_root)
+            || fs::symlink_metadata(&destination)
+                .is_ok_and(|metadata| metadata.file_type().is_symlink())
+        {
+            result.failed_keys.push(object_key);
+            continue;
+        }
+
+        let output = match client
+            .get_object()
+            .bucket(&bucket)
+            .key(&object_key)
+            .send()
+            .await
+        {
+            Ok(output) => output,
+            Err(_) => {
+                result.failed_keys.push(object_key);
+                continue;
+            }
+        };
+        let mut file = match File::create(&destination).await {
+            Ok(file) => file,
+            Err(_) => {
+                result.failed_keys.push(object_key);
+                continue;
+            }
+        };
+        let mut body = output.body.into_async_read();
+        if tokio::io::copy(&mut body, &mut file).await.is_err() || file.flush().await.is_err() {
+            drop(file);
+            let _ = fs::remove_file(&destination);
+            result.failed_keys.push(object_key);
+            continue;
+        }
+        result.downloaded_count += 1;
+    }
+
+    Ok(result)
+}
+
+fn safe_download_path(root: &Path, relative_key: &str) -> Result<PathBuf, String> {
+    let relative_key = relative_key.trim_end_matches('/');
+    if relative_key.is_empty() {
+        return Err("对象 Key 不包含有效文件名。".to_string());
+    }
+
+    let mut destination = root.to_path_buf();
+    for component in relative_key.split('/') {
+        if component.is_empty()
+            || component == "."
+            || component == ".."
+            || component
+                .chars()
+                .any(|character| matches!(character, '\\' | ':' | '\0'))
+        {
+            return Err("对象 Key 包含不安全的本地路径。".to_string());
+        }
+        destination.push(component);
+    }
+    if !destination.starts_with(root) {
+        return Err("对象 Key 指向下载目录之外的路径。".to_string());
+    }
+    Ok(destination)
 }
 
 struct PreparedConnection {
