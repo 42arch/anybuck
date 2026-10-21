@@ -1,0 +1,110 @@
+use crate::connection::manager::{PreparedConnection, new_connection_id};
+use crate::connection::model::{ConnectR2Request, SavedR2Connection, StorageProvider};
+use aws_sdk_s3::{Client, config::Credentials};
+
+pub(crate) async fn prepare_connection(
+    request: &ConnectR2Request,
+) -> Result<PreparedConnection, String> {
+    let region = request.region.trim();
+    let bucket = request.bucket.trim();
+    let access_key_id = request.access_key_id.trim();
+    let secret_access_key = request.secret_access_key.trim();
+    if access_key_id.is_empty() || secret_access_key.is_empty() {
+        return Err("请填写腾讯云 SecretId 和 SecretKey。".to_string());
+    }
+    let endpoint = cos_endpoint(region, bucket, request.endpoint.as_deref())?;
+    let credentials = Credentials::new(
+        access_key_id,
+        secret_access_key,
+        None,
+        None,
+        "cloudstore-cos",
+    );
+    let shared_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .endpoint_url(&endpoint)
+        .region(aws_sdk_s3::config::Region::new(region.to_string()))
+        .credentials_provider(credentials)
+        .load()
+        .await;
+    // COS buckets created since 2024 require virtual-hosted-style requests.
+    let client = Client::from_conf(
+        aws_sdk_s3::config::Builder::from(&shared_config)
+            .force_path_style(false)
+            .request_checksum_calculation(
+                aws_sdk_s3::config::RequestChecksumCalculation::WhenRequired,
+            )
+            .response_checksum_validation(
+                aws_sdk_s3::config::ResponseChecksumValidation::WhenRequired,
+            )
+            .build(),
+    );
+    let name = request.name.trim();
+    Ok(PreparedConnection {
+        client,
+        profile: SavedR2Connection {
+            id: request
+                .connection_id
+                .clone()
+                .unwrap_or_else(|| new_connection_id(StorageProvider::TencentCos)),
+            name: if name.is_empty() { bucket } else { name }.to_string(),
+            provider: StorageProvider::TencentCos,
+            region: region.to_string(),
+            account_id: String::new(),
+            endpoint,
+            bucket: bucket.to_string(),
+        },
+    })
+}
+
+fn cos_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<String, String> {
+    if region.is_empty()
+        || !region
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        || region.starts_with('-')
+        || region.ends_with('-')
+    {
+        return Err("请填写有效的 COS 地域，例如 ap-guangzhou。".to_string());
+    }
+    let valid_bucket = bucket.rsplit_once('-').is_some_and(|(name, app_id)| {
+        !name.is_empty() && app_id.len() >= 5 && app_id.bytes().all(|byte| byte.is_ascii_digit())
+    });
+    if !valid_bucket {
+        return Err(
+            "COS Bucket 应填写包含 APPID 的完整名称，例如 examplebucket-1250000000。".to_string(),
+        );
+    }
+    let endpoint = format!("https://cos.{region}.myqcloud.com");
+    let requested = requested.unwrap_or_default().trim().trim_end_matches('/');
+    if !requested.is_empty() && requested != endpoint {
+        return Err("COS Endpoint 必须与所选地域一致。".to_string());
+    }
+    Ok(endpoint)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cos_endpoint;
+
+    #[test]
+    fn cos_endpoint_uses_bucket_region() {
+        assert_eq!(
+            cos_endpoint("ap-guangzhou", "assets-1250000000", None).unwrap(),
+            "https://cos.ap-guangzhou.myqcloud.com"
+        );
+    }
+
+    #[test]
+    fn rejects_incomplete_bucket_or_mismatched_endpoint() {
+        assert!(cos_endpoint("ap-guangzhou", "assets", None).is_err());
+        assert!(cos_endpoint("", "assets-1250000000", None).is_err());
+        assert!(
+            cos_endpoint(
+                "ap-guangzhou",
+                "assets-1250000000",
+                Some("https://cos.ap-beijing.myqcloud.com")
+            )
+            .is_err()
+        );
+    }
+}

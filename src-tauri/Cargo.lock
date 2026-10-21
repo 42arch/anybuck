@@ -975,6 +975,8 @@ version = "0.1.0"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
+ "bytes",
+ "http-body",
  "keyring",
  "serde",
  "serde_json",

@@ -1,0 +1,148 @@
+use crate::connection::manager::{R2ConnectionState, client_for_connection};
+use crate::storage::s3::objects::DownloadR2ObjectsResult;
+use crate::storage::s3::transfer::{self, upload_file};
+use crate::transfers::planner;
+use crate::transfers::service;
+use crate::transfers::{
+    manager::TransferManager,
+    model::{DownloadPlanSummary, TransferTask},
+};
+use std::{path::Path, sync::Arc};
+use tauri::{AppHandle, State};
+
+#[tauri::command]
+pub async fn upload_r2_file(
+    connection_id: String,
+    prefix: String,
+    local_path: String,
+    state: State<'_, R2ConnectionState>,
+) -> Result<(), String> {
+    let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
+    upload_file(
+        &client,
+        &bucket,
+        &prefix,
+        Path::new(&local_path),
+        Arc::new(|_, _| {}),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn download_r2_objects(
+    connection_id: String,
+    prefix: String,
+    keys: Vec<String>,
+    destination_path: String,
+    state: State<'_, R2ConnectionState>,
+) -> Result<DownloadR2ObjectsResult, String> {
+    let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
+    transfer::download_objects(&client, &bucket, prefix, keys, destination_path).await
+}
+
+#[tauri::command]
+pub fn list_transfer_tasks(state: State<'_, TransferManager>) -> Result<Vec<TransferTask>, String> {
+    service::list_transfer_tasks(state)
+}
+
+#[tauri::command]
+pub async fn enqueue_r2_uploads(
+    app: AppHandle,
+    connection_id: String,
+    prefix: String,
+    local_paths: Vec<String>,
+    connections: State<'_, R2ConnectionState>,
+    manager: State<'_, TransferManager>,
+) -> Result<Vec<TransferTask>, String> {
+    service::enqueue_r2_uploads(
+        app,
+        connection_id,
+        prefix,
+        local_paths,
+        connections,
+        manager,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn enqueue_r2_object_operation(
+    app: AppHandle,
+    connection_id: String,
+    keys: Vec<String>,
+    destination_prefix: String,
+    operation: String,
+    connections: State<'_, R2ConnectionState>,
+    manager: State<'_, TransferManager>,
+) -> Result<Vec<TransferTask>, String> {
+    service::enqueue_r2_object_operation(
+        app,
+        connection_id,
+        keys,
+        destination_prefix,
+        operation,
+        connections,
+        manager,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn prepare_r2_download(
+    app: AppHandle,
+    connection_id: String,
+    prefix: String,
+    keys: Vec<String>,
+    destination_path: String,
+    connections: State<'_, R2ConnectionState>,
+    manager: State<'_, TransferManager>,
+) -> Result<DownloadPlanSummary, String> {
+    planner::prepare_r2_download(
+        app,
+        connection_id,
+        prefix,
+        keys,
+        destination_path,
+        connections,
+        manager,
+    )
+    .await
+}
+
+#[tauri::command]
+pub fn enqueue_r2_download(
+    app: AppHandle,
+    plan_id: String,
+    conflict_action: String,
+    connections: State<'_, R2ConnectionState>,
+    manager: State<'_, TransferManager>,
+) -> Result<Vec<TransferTask>, String> {
+    service::enqueue_r2_download(app, plan_id, conflict_action, connections, manager)
+}
+
+#[tauri::command]
+pub fn cancel_transfer_task(
+    app: AppHandle,
+    task_id: String,
+    manager: State<'_, TransferManager>,
+) -> Result<(), String> {
+    service::cancel_transfer_task(app, task_id, manager)
+}
+
+#[tauri::command]
+pub fn retry_transfer_task(
+    app: AppHandle,
+    task_id: String,
+    connections: State<'_, R2ConnectionState>,
+    manager: State<'_, TransferManager>,
+) -> Result<TransferTask, String> {
+    service::retry_transfer_task(app, task_id, connections, manager)
+}
+
+#[tauri::command]
+pub fn clear_transfer_history(
+    app: AppHandle,
+    manager: State<'_, TransferManager>,
+) -> Result<(), String> {
+    service::clear_transfer_history(app, manager)
+}

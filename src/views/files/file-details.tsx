@@ -1,0 +1,116 @@
+import type { ActiveR2Connection } from '@/types/connection'
+import type { StorageItem } from '@/types/storage'
+import { CopyIcon, DownloadSimpleIcon, FoldersIcon, InfoIcon, TrashIcon } from '@phosphor-icons/react'
+import { FileBadge } from '@/components/files/file-icon'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Separator } from '@/components/ui/separator'
+import { getObjectUrl } from '@/lib/object-url'
+
+interface FileDetailsProps {
+  item?: StorageItem
+  connection: ActiveR2Connection | null
+  path: string
+  onCopyKey: (key: string) => void
+  onCopyUrl: (url: string) => void
+  onOpenFolder: (item: StorageItem) => void
+  onDownload: (items: StorageItem[]) => void
+  isDownloading?: boolean
+  onDelete: (item: StorageItem) => void
+}
+
+export function FileDetails({ item, connection, path, onCopyKey, onCopyUrl, onOpenFolder, onDownload, isDownloading = false, onDelete }: FileDetailsProps) {
+  if (!item) {
+    return (
+      <Card size="sm" className="h-full min-h-72">
+        <CardHeader><CardTitle>文件详情</CardTitle></CardHeader>
+        <CardContent className="flex flex-1 items-center">
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon"><InfoIcon /></EmptyMedia>
+              <EmptyTitle>选择一个项目</EmptyTitle>
+              <EmptyDescription>查看文件或文件夹的详细信息</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const key = `${path ? `${path}/` : ''}${item.name}`
+  const objectUrl = item.kind !== 'folder' && connection ? getObjectUrl(connection, item.id) : null
+
+  return (
+    <Card size="sm" className="h-full min-h-72">
+      <CardHeader>
+        <CardTitle>文件详情</CardTitle>
+      </CardHeader>
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+        <div className="flex flex-col items-center gap-2 py-2 text-center">
+          <FileBadge kind={item.kind} size={32} className="size-16 rounded-xl" />
+          <strong className="max-w-full truncate text-xs">{item.name}</strong>
+          <span className="text-xs text-muted-foreground">{item.detail}</span>
+        </div>
+        <Separator />
+        <dl className="flex flex-col gap-3 text-xs">
+          <div className="flex items-start justify-between gap-3">
+            <dt className="text-muted-foreground">文件类型</dt>
+            <dd className="text-right font-medium">{item.kind === 'folder' ? '文件夹' : item.name.split('.').pop()?.toUpperCase()}</dd>
+          </div>
+          <div className="flex items-start justify-between gap-3">
+            <dt className="text-muted-foreground">文件大小</dt>
+            <dd className="text-right font-medium">{item.size}</dd>
+          </div>
+          <div className="flex items-start justify-between gap-3">
+            <dt className="text-muted-foreground">修改时间</dt>
+            <dd className="text-right font-medium">{item.updated}</dd>
+          </div>
+          <div className="flex flex-col gap-1">
+            <dt className="text-muted-foreground">对象 Key</dt>
+            <dd className="break-all rounded-md bg-muted p-2 font-mono text-xs">{key}</dd>
+          </div>
+          {objectUrl && (
+            <div className="flex flex-col gap-1">
+              <dt className="text-muted-foreground">对象链接</dt>
+              <dd className="flex flex-col gap-2">
+                <span className="break-all rounded-md bg-muted p-2 font-mono text-xs">{objectUrl}</span>
+                <span className="text-muted-foreground">
+                  {connection?.provider === 'cloudflare-r2'
+                    ? '这是 R2 S3 API 地址，直接访问需要签名；公开访问需配置公开域名。'
+                    : '私有对象需要签名链接才能访问；部分 COS Bucket 的默认域名不支持浏览器预览。'}
+                </span>
+                <Button variant="outline" size="sm" className="self-start" onClick={() => onCopyUrl(objectUrl)}>
+                  <CopyIcon data-icon="inline-start" />
+                  复制链接
+                </Button>
+              </dd>
+            </div>
+          )}
+        </dl>
+      </CardContent>
+      <CardFooter className="flex gap-2">
+        <Button variant="outline" className="flex-1" onClick={() => onCopyKey(key)}>
+          <CopyIcon data-icon="inline-start" />
+          复制 Key
+        </Button>
+        {item.kind === 'folder'
+          ? (
+              <Button className="flex-1" onClick={() => onOpenFolder(item)}>
+                <FoldersIcon data-icon="inline-start" />
+                打开
+              </Button>
+            )
+          : (
+              <Button className="flex-1" disabled={isDownloading} onClick={() => onDownload([item])}>
+                <DownloadSimpleIcon data-icon="inline-start" />
+                下载
+              </Button>
+            )}
+        <Button variant="outline" size="icon" aria-label={`删除 ${item.name}`} onClick={() => onDelete(item)}>
+          <TrashIcon />
+        </Button>
+      </CardFooter>
+    </Card>
+  )
+}

@@ -27,6 +27,8 @@ aws-config = { version = "1.12.0", default-features = false, features = ["behavi
 aws-sdk-s3 = { version = "1.152.0", default-features = false, features = ["default-https-client", "rt-tokio"] }
 keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
 tokio = { version = "1", features = ["fs", "io-util", "sync", "macros"] }
+http-body = "1"
+bytes = "1"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

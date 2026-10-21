@@ -13,7 +13,7 @@
 ## 前端约定
 
 - 使用 `@/` 引用 `src/` 下的模块。通用 UI 组件放在 `src/components/ui/`，功能组件按业务领域组织。
-- 页面及其专属组件按视图放在 `src/pages/<view>/`。
+- 页面及其专属组件按视图放在 `src/views/<view>/`。
 - 项目已配置 Tailwind CSS 4 与 shadcn/ui；主题变量在 `src/index.css`，组件配置在 `components.json`。界面优先使用 `src/components/ui/` 的现有组件和 Tailwind 工具类，不新增页面级原生 CSS 文件；按项目配置使用 Base UI 和 Phosphor 图标。
 - 使用 `@phosphor-icons/react` 图标时，统一使用带 `*Icon` 后缀的规范命名（例如 `CloudArrowUpIcon`、`FolderIcon`、`XIcon`），避免使用已被官方废弃的旧版无后缀命名。
 - 修改现有页面时，可逐步替换模板样式；不要为了无关改动重写整套 UI。
