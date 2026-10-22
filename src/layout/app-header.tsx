@@ -11,10 +11,10 @@ interface AppHeaderProps {
 
 export function AppHeader({ title, connected }: AppHeaderProps) {
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b bg-card px-4 md:px-6">
-      <div className="flex min-w-0 items-center gap-3 text-xs">
+    <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b bg-card px-4 md:px-6">
+      <div className="flex min-w-0 items-center gap-2.5 text-xs">
         <SidebarTrigger aria-label="切换侧栏" />
-        <Separator orientation="vertical" className="h-5" />
+        <Separator orientation="vertical" className="h-4" />
         <span className="hidden text-muted-foreground sm:inline">工作台</span>
         <CaretRightIcon className="hidden size-3 text-muted-foreground sm:inline" />
         <strong className="truncate font-medium">{title}</strong>

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
 import { useR2Connection } from '@/hooks/use-r2-connection'
+import { normalizePublicBaseUrl } from '@/lib/object-url'
 import { useSettingsStore } from '@/store/settings-store'
 
 type SettingsOption = 'connections' | 'download-path'
@@ -40,8 +41,9 @@ export function SettingsView({ onNotice }: SettingsViewProps) {
   const [selectedOption, setSelectedOption] = useState<SettingsOption>('connections')
   const [busyConnectionId, setBusyConnectionId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [publicUrlDrafts, setPublicUrlDrafts] = useState<Record<string, string>>({})
   const [isChoosingDownloadPath, setIsChoosingDownloadPath] = useState(false)
-  const { defaultDownloadPath, setDefaultDownloadPath } = useSettingsStore()
+  const { defaultDownloadPath, publicBaseUrls, setDefaultDownloadPath, setPublicBaseUrl } = useSettingsStore()
   const savedIds = new Set(savedConnections.map(item => item.id))
 
   async function chooseDownloadPath() {
@@ -79,6 +81,19 @@ export function SettingsView({ onNotice }: SettingsViewProps) {
     finally {
       setBusyConnectionId(null)
     }
+  }
+
+  function savePublicBaseUrl(connectionId: string) {
+    const draft = (publicUrlDrafts[connectionId] ?? publicBaseUrls[connectionId] ?? '').trim()
+    const normalized = draft ? normalizePublicBaseUrl(draft) : ''
+    if (normalized === null) {
+      setError('公开域名必须是完整的 HTTPS 域名，不包含路径、查询参数或账号密码。')
+      return
+    }
+    setPublicBaseUrl(connectionId, normalized)
+    setPublicUrlDrafts(current => ({ ...current, [connectionId]: normalized }))
+    setError('')
+    onNotice(normalized ? '公开访问域名已保存。' : '公开访问域名已清除。')
   }
 
   return (
@@ -179,7 +194,7 @@ export function SettingsView({ onNotice }: SettingsViewProps) {
               <CloudIcon className="size-8 text-muted-foreground" />
               <div>
                 <p className="text-sm font-medium">还没有存储连接</p>
-                <p className="mt-1 text-sm text-muted-foreground">添加 Cloudflare R2 或腾讯云 COS 连接后，会在这里显示连接详情和状态。</p>
+                <p className="mt-1 text-sm text-muted-foreground">添加 Cloudflare R2、AWS S3、腾讯云 COS 或阿里云 OSS 连接后，会在这里显示连接详情和状态。</p>
               </div>
             </CardContent>
           </Card>
@@ -202,7 +217,7 @@ export function SettingsView({ onNotice }: SettingsViewProps) {
                           {item.connected ? (isCurrent ? '当前连接' : '已连接') : '已断开'}
                         </Badge>
                         <Badge variant="outline">{isSaved ? '已保存' : '仅本次运行'}</Badge>
-                        <Badge variant="outline">{item.provider === 'tencent-cos' ? '腾讯云 COS' : 'Cloudflare R2'}</Badge>
+                        <Badge variant="outline">{item.provider === 'tencent-cos' ? '腾讯云 COS' : item.provider === 'aliyun-oss' ? '阿里云 OSS' : item.provider === 'aws-s3' ? 'AWS S3' : 'Cloudflare R2'}</Badge>
                       </div>
                       <div className="grid min-w-0 gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
                         <p className="truncate">
@@ -213,7 +228,36 @@ export function SettingsView({ onNotice }: SettingsViewProps) {
                           Endpoint：
                           {item.endpoint}
                         </p>
+                        <p className="break-all font-mono sm:col-span-2">
+                          连接 ID：
+                          {item.connectionId}
+                        </p>
                       </div>
+                      <form
+                        className="flex min-w-0 flex-col gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          savePublicBaseUrl(item.connectionId)
+                        }}
+                      >
+                        <label htmlFor={`public-domain-${item.connectionId}`} className="text-xs font-medium">公开访问域名</label>
+                        <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                          <Input
+                            id={`public-domain-${item.connectionId}`}
+                            type="url"
+                            className="min-w-0"
+                            value={publicUrlDrafts[item.connectionId] ?? publicBaseUrls[item.connectionId] ?? ''}
+                            onChange={event => setPublicUrlDrafts(current => ({ ...current, [item.connectionId]: event.target.value }))}
+                            placeholder={item.provider === 'cloudflare-r2' ? 'https://pub-xxx.r2.dev 或自定义域名' : item.provider === 'aws-s3' ? '留空使用 AWS S3 默认对象地址' : `留空使用${item.provider === 'aliyun-oss' ? ' OSS' : ' COS'} 默认域名`}
+                          />
+                          <Button type="submit" variant="outline" size="sm" className="shrink-0">保存域名</Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {item.provider === 'cloudflare-r2'
+                            ? '填写已启用的 r2.dev 或自定义域名；文件详情会验证匿名访问。'
+                            : `可填写自定义域名；留空时检查${item.provider === 'aws-s3' ? ' AWS S3' : item.provider === 'aliyun-oss' ? ' OSS' : ' COS'} 默认对象地址是否可匿名访问。`}
+                        </p>
+                      </form>
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       {isSaved && (
@@ -222,7 +266,10 @@ export function SettingsView({ onNotice }: SettingsViewProps) {
                           size="sm"
                           className="text-destructive hover:text-destructive"
                           disabled={isBusy}
-                          onClick={() => void runConnectionAction(item.connectionId, () => forgetSavedConnection(item.connectionId), `已删除连接“${item.name}”及其本机凭证。`)}
+                          onClick={() => void runConnectionAction(item.connectionId, async () => {
+                            await forgetSavedConnection(item.connectionId)
+                            setPublicBaseUrl(item.connectionId, '')
+                          }, `已删除连接“${item.name}”及其本机凭证。`)}
                         >
                           {isBusy ? <Spinner data-icon="inline-start" /> : <TrashIcon data-icon="inline-start" />}
                           删除

@@ -35,6 +35,7 @@ export function ConnectionDialog({
   const [endpoint, setEndpoint] = useState<string | null>(null)
   const [accessKeyId, setAccessKeyId] = useState<string | null>(null)
   const [secretAccessKey, setSecretAccessKey] = useState('')
+  const [sessionToken, setSessionToken] = useState('')
   const [bucket, setBucket] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [rememberConnection, setRememberConnection] = useState(true)
@@ -49,14 +50,16 @@ export function ConnectionDialog({
         provider,
         name: name.trim(),
         accountId: accountId ?? '',
-        region: provider === 'tencent-cos' ? region.trim() : '',
+        region: provider === 'cloudflare-r2' ? '' : region.trim(),
         endpoint: provider === 'cloudflare-r2' ? endpoint ?? '' : '',
         accessKeyId: accessKeyId ?? '',
         secretAccessKey,
+        sessionToken: provider === 'aws-s3' ? sessionToken.trim() : '',
         bucket: bucket ?? '',
         rememberConnection,
       })
       setSecretAccessKey('')
+      setSessionToken('')
       setAccessKeyId(null)
       onNotice('连接已添加并设为当前连接。')
       onConnected?.()
@@ -99,16 +102,19 @@ export function ConnectionDialog({
             <div className="flex flex-col gap-2">
               <Label>服务商</Label>
               <ToggleGroup
+                className="flex-wrap"
                 variant="outline"
                 value={[provider]}
                 onValueChange={(value) => {
-                  if (value[0] === 'cloudflare-r2' || value[0] === 'tencent-cos')
+                  if (value[0] === 'cloudflare-r2' || value[0] === 'aws-s3' || value[0] === 'tencent-cos' || value[0] === 'aliyun-oss')
                     setProvider(value[0])
                 }}
                 aria-label="存储服务商"
               >
                 <ToggleGroupItem value="cloudflare-r2">Cloudflare R2</ToggleGroupItem>
+                <ToggleGroupItem value="aws-s3">AWS S3</ToggleGroupItem>
                 <ToggleGroupItem value="tencent-cos">腾讯云 COS</ToggleGroupItem>
+                <ToggleGroupItem value="aliyun-oss">阿里云 OSS</ToggleGroupItem>
               </ToggleGroup>
             </div>
             <div className="flex flex-col gap-2">
@@ -136,10 +142,10 @@ export function ConnectionDialog({
                 />
               </div>
             )}
-            {provider === 'tencent-cos' && (
+            {provider !== 'cloudflare-r2' && (
               <div className="flex flex-col gap-2">
-                <Label htmlFor="cos-region">地域 Region</Label>
-                <Input id="cos-region" value={region} onChange={event => setRegion(event.target.value)} placeholder="例如 ap-guangzhou" pattern="[a-z0-9-]+" required />
+                <Label htmlFor="storage-region">地域 Region</Label>
+                <Input id="storage-region" value={region} onChange={event => setRegion(event.target.value)} placeholder={provider === 'aws-s3' ? '例如 us-east-1' : provider === 'aliyun-oss' ? '例如 cn-hangzhou' : '例如 ap-guangzhou'} pattern="[a-z0-9-]+" required />
               </div>
             )}
             <div className="flex flex-col gap-2">
@@ -174,22 +180,35 @@ export function ConnectionDialog({
                 autoComplete="off"
                 value={accessKeyId ?? ''}
                 onChange={event => setAccessKeyId(event.target.value)}
-                placeholder={provider === 'tencent-cos' ? '腾讯云 API 密钥的 SecretId' : 'R2 API Token 的 Access Key ID'}
+                placeholder={provider === 'tencent-cos' ? '腾讯云 API 密钥的 SecretId' : provider === 'aliyun-oss' ? '阿里云 AccessKey ID' : provider === 'aws-s3' ? 'AWS Access Key ID' : 'R2 API Token 的 Access Key ID'}
                 required
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="r2-secret-key">{provider === 'tencent-cos' ? 'SecretKey' : 'Secret Access Key'}</Label>
+              <Label htmlFor="r2-secret-key">{provider === 'tencent-cos' ? 'SecretKey' : provider === 'aliyun-oss' ? 'AccessKey Secret' : 'Secret Access Key'}</Label>
               <Input
                 id="r2-secret-key"
                 type="password"
                 autoComplete="new-password"
                 value={secretAccessKey}
                 onChange={event => setSecretAccessKey(event.target.value)}
-                placeholder={provider === 'tencent-cos' ? '腾讯云 API 密钥的 SecretKey' : '输入 Secret Access Key'}
+                placeholder={provider === 'tencent-cos' ? '腾讯云 API 密钥的 SecretKey' : provider === 'aliyun-oss' ? '阿里云 AccessKey Secret' : '输入 Secret Access Key'}
                 required
               />
             </div>
+            {provider === 'aws-s3' && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="aws-session-token">Session Token（临时凭证需要）</Label>
+                <Input
+                  id="aws-session-token"
+                  type="password"
+                  autoComplete="off"
+                  value={sessionToken}
+                  onChange={event => setSessionToken(event.target.value)}
+                  placeholder="长期访问密钥可留空"
+                />
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <Checkbox
                 id="r2-remember-connection"
@@ -203,7 +222,11 @@ export function ConnectionDialog({
           <p className="text-xs leading-relaxed text-muted-foreground">
             {provider === 'tencent-cos'
               ? '请使用有该 Bucket 对象权限的腾讯云子用户密钥。Endpoint 会根据地域自动生成。'
-              : '请在 Cloudflare R2 创建对象读权限或读写权限的 S3 API Token，并尽量限制到这个 Bucket。'}
+              : provider === 'aliyun-oss'
+                ? '请使用有该 Bucket 对象权限的阿里云 RAM 用户 AccessKey。Endpoint 会根据地域自动生成。'
+                : provider === 'aws-s3'
+                  ? '请使用有目标 Bucket 列表和对象操作权限的 AWS 凭证。临时凭证需同时填写 Session Token；端点由 AWS SDK 根据地域选择。'
+                  : '请在 Cloudflare R2 创建对象读权限或读写权限的 S3 API Token，并尽量限制到这个 Bucket。'}
             {' '}
             密钥不会写入普通配置文件；勾选后只存到本机系统凭证库，连接成功后会清空表单中的密钥。
           </p>

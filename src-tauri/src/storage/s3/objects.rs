@@ -7,6 +7,7 @@ use serde::Serialize;
 use std::collections::HashSet;
 use tokio::io::AsyncReadExt;
 const PAGE_SIZE: i32 = 100;
+const COUNT_PAGE_SIZE: i32 = 1000;
 const DELETE_BATCH_SIZE: usize = 1000;
 
 #[derive(Serialize)]
@@ -111,6 +112,52 @@ pub(crate) async fn fetch_page(
         objects,
         next_token: output.next_continuation_token().map(ToOwned::to_owned),
     })
+}
+
+pub(crate) async fn count_objects(
+    client: &Client,
+    bucket: &str,
+    prefix: &str,
+) -> Result<usize, String> {
+    let normalized_prefix = if prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{}/", prefix.trim_matches('/'))
+    };
+    let mut total = 0usize;
+    let mut continuation_token: Option<String> = None;
+
+    loop {
+        let mut request = client
+            .list_objects_v2()
+            .bucket(bucket)
+            .prefix(&normalized_prefix)
+            .delimiter("/")
+            .max_keys(COUNT_PAGE_SIZE);
+        if let Some(token) = continuation_token.as_deref() {
+            request = request.continuation_token(token);
+        }
+
+        let output = request
+            .send()
+            .await
+            .map_err(|error| format_storage_error(&error))?;
+        total += output.common_prefixes().len();
+        total += output
+            .contents()
+            .iter()
+            .filter(|object| {
+                object
+                    .key()
+                    .is_some_and(|key| key != normalized_prefix.as_str() && !key.ends_with('/'))
+            })
+            .count();
+
+        continuation_token = output.next_continuation_token().map(ToOwned::to_owned);
+        if continuation_token.is_none() {
+            return Ok(total);
+        }
+    }
 }
 
 pub(crate) async fn fetch_object_preview(

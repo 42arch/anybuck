@@ -26,6 +26,7 @@ pub async fn connect_r2(
         let credentials = SavedR2Credentials {
             access_key_id: request.access_key_id.trim().to_string(),
             secret_access_key: request.secret_access_key.trim().to_string(),
+            session_token: request.session_token.trim().to_string(),
         };
         tauri::async_runtime::spawn_blocking(move || {
             save_connection(&app_for_store, &profile, &credentials)
@@ -82,6 +83,7 @@ pub async fn connect_saved_r2_connection(
             endpoint: Some(profile.endpoint),
             access_key_id: credentials.access_key_id,
             secret_access_key: credentials.secret_access_key,
+            session_token: credentials.session_token,
             bucket: profile.bucket,
             remember_connection: true,
         },

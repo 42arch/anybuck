@@ -47,6 +47,7 @@ export function AppLayout() {
     pendingDownload,
     isSelectingFiles,
     uploadFiles,
+    stageUpload,
     downloadItems,
     confirmUpload,
     confirmDownload,
@@ -84,7 +85,7 @@ export function AppLayout() {
       />
       <SidebarInset className="h-svh min-h-0 min-w-0 overflow-hidden bg-background">
         <AppHeader title={viewTitles[view]} connected={Boolean(connection)} />
-        <div className="mx-auto flex min-h-0 w-full max-w-screen-2xl flex-1 flex-col gap-6 overflow-y-auto p-3 md:p-4">
+        <div className="mx-auto flex min-h-0 w-full max-w-screen-2xl flex-1 flex-col gap-4 overflow-y-auto p-2 md:p-3">
           <div className="flex min-h-0 flex-1 flex-col">
             <Routes>
               <Route path="/" element={<Navigate to={viewPaths.files} replace />} />
@@ -96,6 +97,7 @@ export function AppLayout() {
                     selectedConnection={selectedConnection}
                     onAddConnection={() => openConnectionDialog()}
                     onUpload={prefix => void uploadFiles(prefix)}
+                    onDropUpload={stageUpload}
                     isUploading={Boolean(isSelectingFiles || pendingUpload)}
                     onDownload={(prefix, items) => void downloadItems(prefix, items)}
                     isDownloading={Boolean(pendingDownload)}

@@ -29,6 +29,7 @@ keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
 tokio = { version = "1", features = ["fs", "io-util", "sync", "macros"] }
 http-body = "1"
 bytes = "1"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

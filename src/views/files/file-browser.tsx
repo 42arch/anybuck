@@ -11,24 +11,27 @@ import {
   DotsThreeIcon,
   DownloadSimpleIcon,
   EyeIcon,
-  FolderIcon,
   GridFourIcon,
   HouseIcon,
+  InfinityIcon,
+  InfoIcon,
   ListBulletsIcon,
+  ListNumbersIcon,
   MagnifyingGlassIcon,
   PlusIcon,
-  SidebarSimpleIcon,
-  SlidersHorizontalIcon,
   TrashIcon,
   UploadSimpleIcon,
   XIcon,
 } from '@phosphor-icons/react'
-import { Fragment, useState } from 'react'
+import { isTauri } from '@tauri-apps/api/core'
+import { getCurrentWebview } from '@tauri-apps/api/webview'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { FileBadge, FileIcon } from '@/components/files/file-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
-import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -36,9 +39,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { isTextPreviewable } from '@/lib/file-kind'
 import { cn } from '@/lib/utils'
 import { DeleteConfirmDialog } from './delete-confirm-dialog'
@@ -57,7 +62,7 @@ interface FileBrowserProps {
   selectedItems: StorageItem[]
   search: string
   grid: boolean
-  showDetails: boolean
+  displayMode: 'pagination' | 'infinite'
   sortAscending: boolean
   onSearchChange: (value: string) => void
   onNavigate: (path: string) => void
@@ -67,11 +72,10 @@ interface FileBrowserProps {
   onSelectAll: () => void
   onClearSelection: () => void
   onGridChange: (grid: boolean) => void
-  onDetailsChange: (show: boolean) => void
+  onDisplayModeChange: (mode: 'pagination' | 'infinite') => void
   onSortChange: () => void
   onRefresh: () => void
-  onCopyKey: (key: string) => void
-  onCopyUrl: (url: string) => void
+  onCopyUrl: (url: string) => Promise<boolean>
   onCreateFolder: (name: string) => Promise<void>
   isCreatingFolder?: boolean
   onUnavailableAction: (label: string) => void
@@ -85,13 +89,27 @@ interface FileBrowserProps {
   isDownloading?: boolean
   onConnect: () => void
   onUpload: () => void
+  onDropUpload: (paths: string[]) => void
+  onDropError: (message: string) => void
   isUploading?: boolean
   isLoading?: boolean
-  isLoadingMore?: boolean
   loadError?: string
   hasRemoteConnection?: boolean
+  loadedCount?: number
   hasNextPage?: boolean
-  onLoadMore?: () => void
+  onLoadMore?: () => Promise<void>
+  totalCount?: number
+  isCounting?: boolean
+  countError?: string
+  currentPage?: number
+  pageCount?: number
+  canGoToPreviousPage?: boolean
+  canGoToNextPage?: boolean
+  onPreviousPage?: () => void
+  onNextPage?: () => void
+  onPageChange?: (page: number) => void
+  isLoadingPage?: boolean
+  onRetryCount?: () => void
   isDeleting?: boolean
 }
 
@@ -106,7 +124,7 @@ export function FileBrowser(props: FileBrowserProps) {
     selectedItems,
     search,
     grid,
-    showDetails,
+    displayMode,
     sortAscending,
     onSearchChange,
     onNavigate,
@@ -116,10 +134,9 @@ export function FileBrowser(props: FileBrowserProps) {
     onSelectAll,
     onClearSelection,
     onGridChange,
-    onDetailsChange,
+    onDisplayModeChange,
     onSortChange,
     onRefresh,
-    onCopyKey,
     onCopyUrl,
     onCreateFolder,
     isCreatingFolder = false,
@@ -134,24 +151,117 @@ export function FileBrowser(props: FileBrowserProps) {
     isDownloading = false,
     onConnect,
     onUpload,
+    onDropUpload,
+    onDropError,
     isUploading = false,
     isLoading = false,
-    isLoadingMore = false,
     loadError = '',
     hasRemoteConnection = false,
+    loadedCount = items.length,
     hasNextPage = false,
     onLoadMore,
+    totalCount,
+    isCounting = false,
+    countError = '',
+    currentPage = 1,
+    pageCount,
+    canGoToPreviousPage = false,
+    canGoToNextPage = false,
+    onPreviousPage,
+    onNextPage,
+    onPageChange,
+    isLoadingPage = false,
+    onRetryCount,
     isDeleting = false,
   } = props
   const [deleteTargets, setDeleteTargets] = useState<StorageItem[]>([])
   const [destinationAction, setDestinationAction] = useState<{ operation: 'move' | 'copy', items: StorageItem[] } | null>(null)
   const [previewItem, setPreviewItem] = useState<StorageItem | null>(null)
+  const [detailsItem, setDetailsItem] = useState<StorageItem | null>(null)
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
   const [createFolderError, setCreateFolderError] = useState('')
+  const [dragOver, setDragOver] = useState(false)
+  const dropZoneRef = useRef<HTMLDivElement>(null)
+  const listViewportRef = useRef<HTMLDivElement>(null)
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
+  const loadMoreInFlightRef = useRef(false)
+  const onDropUploadRef = useRef(onDropUpload)
+  const onDropErrorRef = useRef(onDropError)
+  const onLoadMoreRef = useRef(onLoadMore)
+  onDropUploadRef.current = onDropUpload
+  onDropErrorRef.current = onDropError
+  onLoadMoreRef.current = onLoadMore
   const parts = path ? path.split('/') : []
-  const currentName = parts[parts.length - 1] ?? bucketName
   const allSelected = items.length > 0 && items.every(item => selected.includes(item.id))
+  const loadNextPage = useCallback(async () => {
+    if (!hasNextPage || isLoadingPage || loadMoreInFlightRef.current)
+      return
+    loadMoreInFlightRef.current = true
+    try {
+      await onLoadMoreRef.current?.()
+    }
+    finally {
+      loadMoreInFlightRef.current = false
+    }
+  }, [hasNextPage, isLoadingPage])
+
+  useEffect(() => {
+    if (!connection || isUploading || !isTauri())
+      return
+
+    let disposed = false
+    let unlisten: (() => void) | undefined
+
+    void (async () => {
+      const scaleFactor = await getCurrentWindow().scaleFactor()
+      if (disposed)
+        return
+
+      unlisten = await getCurrentWebview().onDragDropEvent(({ payload }) => {
+        if (payload.type === 'leave') {
+          setDragOver(false)
+          return
+        }
+
+        const position = payload.position.toLogical(scaleFactor)
+        const bounds = dropZoneRef.current?.getBoundingClientRect()
+        const inside = Boolean(bounds
+          && position.x >= bounds.left && position.x <= bounds.right
+          && position.y >= bounds.top && position.y <= bounds.bottom)
+        setDragOver(payload.type !== 'drop' && inside)
+
+        if (payload.type === 'drop' && inside && payload.paths.length > 0)
+          onDropUploadRef.current(payload.paths)
+      })
+
+      if (disposed)
+        unlisten()
+    })().catch((error: unknown) => {
+      setDragOver(false)
+      if (!disposed)
+        onDropErrorRef.current(`无法启用拖拽上传：${error instanceof Error ? error.message : String(error)}`)
+    })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [connection, isUploading])
+
+  useEffect(() => {
+    const root = listViewportRef.current
+    const sentinel = loadMoreSentinelRef.current
+    if (displayMode !== 'infinite' || !hasRemoteConnection || !hasNextPage || isLoadingPage || !root || !sentinel)
+      return
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting)
+        void loadNextPage()
+    }, { root, rootMargin: '160px' })
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [displayMode, hasRemoteConnection, hasNextPage, isLoadingPage, loadNextPage])
 
   async function submitCreateFolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -185,6 +295,14 @@ export function FileBrowser(props: FileBrowserProps) {
 
     return (
       <MenuGroup>
+        <MenuItem onClick={() => {
+          onFocus(item.id)
+          setDetailsItem(item)
+        }}
+        >
+          <InfoIcon />
+          详情
+        </MenuItem>
         {(item.kind === 'image' || (item.kind !== 'folder' && isTextPreviewable(item.name))) && (
           <MenuItem onClick={() => setPreviewItem(item)}>
             <EyeIcon />
@@ -218,44 +336,25 @@ export function FileBrowser(props: FileBrowserProps) {
   }
 
   return (
-    <div className={cn('grid min-h-0 min-w-0 flex-1 gap-4', showDetails && 'xl:grid-cols-[minmax(0,1fr)_15rem]')}>
-      <Card size="sm" className="h-full min-h-0 min-w-0 gap-0">
-        <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b px-4 pt-0">
-          <CardTitle className="flex min-w-0 items-center gap-2">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><FolderIcon className="size-4" weight="duotone" /></span>
-            <span className="truncate">{currentName}</span>
-          </CardTitle>
-          <CardAction className="row-span-1 flex items-center gap-2 self-center">
-            <Button onClick={onUpload} disabled={isUploading}>
-              <UploadSimpleIcon data-icon="inline-start" />
-              上传文件
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (!hasRemoteConnection) {
-                  onUnavailableAction('新建文件夹')
-                  return
-                }
-                setCreateFolderError('')
-                setCreateFolderOpen(true)
-              }}
-            >
-              <PlusIcon data-icon="inline-start" />
-              新建文件夹
-            </Button>
-            <Button variant="outline" size="icon" aria-label="刷新文件列表" onClick={onRefresh}><ArrowClockwiseIcon /></Button>
-          </CardAction>
-        </CardHeader>
-
-        <CardContent className="flex min-h-0 flex-1 min-w-0 flex-col gap-0 overflow-y-auto px-0">
+    <div ref={dropZoneRef} className="relative grid min-h-0 min-w-0 flex-1">
+      {dragOver && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/10" role="status">
+          <div className="flex flex-col items-center gap-2 rounded-lg border bg-card px-6 py-5 text-center shadow-sm">
+            <CloudArrowUpIcon className="size-8 text-primary" />
+            <span className="font-medium">松开以上传到当前目录</span>
+            <span className="text-xs text-muted-foreground">{`${bucketName}/${path ? `${path}/` : ''}`}</span>
+          </div>
+        </div>
+      )}
+      <Card size="sm" className="h-full min-h-0 min-w-0 gap-0 pt-0">
+        <CardContent className="flex min-h-0 flex-1 min-w-0 flex-col gap-0 overflow-visible px-0">
           {loadError && (
             <Alert variant="destructive" className="m-4 mb-0">
               <AlertTitle>无法读取存储对象</AlertTitle>
               <AlertDescription>{loadError}</AlertDescription>
             </Alert>
           )}
-          <div className="relative border-b">
+          <div className="relative shrink-0 border-b">
             <div
               className={cn('flex flex-wrap items-center justify-between gap-3 px-4 py-3', selected.length > 0 && 'invisible')}
               aria-hidden={selected.length > 0}
@@ -292,7 +391,36 @@ export function FileBrowser(props: FileBrowserProps) {
                   <InputGroupAddon><MagnifyingGlassIcon /></InputGroupAddon>
                   <InputGroupInput aria-label="搜索当前目录" placeholder="搜索当前目录..." value={search} onChange={event => onSearchChange(event.target.value)} />
                 </InputGroup>
-                <Button variant="outline" size="icon" aria-label="切换名称排序" onClick={onSortChange}><SlidersHorizontalIcon /></Button>
+                <Tooltip>
+                  <TooltipTrigger render={<Button size="icon-sm" aria-label="上传文件" onClick={onUpload} disabled={isUploading}><UploadSimpleIcon /></Button>} />
+                  <TooltipContent>上传文件</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={(
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        aria-label="新建文件夹"
+                        onClick={() => {
+                          if (!hasRemoteConnection) {
+                            onUnavailableAction('新建文件夹')
+                            return
+                          }
+                          setCreateFolderError('')
+                          setCreateFolderOpen(true)
+                        }}
+                      >
+                        <PlusIcon />
+                      </Button>
+                    )}
+                  />
+                  <TooltipContent>新建文件夹</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="刷新文件列表" onClick={onRefresh}><ArrowClockwiseIcon /></Button>} />
+                  <TooltipContent>刷新文件列表</TooltipContent>
+                </Tooltip>
                 <ToggleGroup
                   variant="outline"
                   size="sm"
@@ -304,10 +432,15 @@ export function FileBrowser(props: FileBrowserProps) {
                   }}
                   aria-label="文件视图"
                 >
-                  <ToggleGroupItem value="list" aria-label="列表视图"><ListBulletsIcon /></ToggleGroupItem>
-                  <ToggleGroupItem value="grid" aria-label="网格视图"><GridFourIcon /></ToggleGroupItem>
+                  <Tooltip>
+                    <TooltipTrigger render={<ToggleGroupItem value="list" aria-label="列表视图"><ListBulletsIcon /></ToggleGroupItem>} />
+                    <TooltipContent>列表视图</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger render={<ToggleGroupItem value="grid" aria-label="网格视图"><GridFourIcon /></ToggleGroupItem>} />
+                    <TooltipContent>网格视图</TooltipContent>
+                  </Tooltip>
                 </ToggleGroup>
-                <Button variant={showDetails ? 'secondary' : 'outline'} size="icon" aria-label="显示详情" aria-pressed={showDetails} onClick={() => onDetailsChange(!showDetails)}><SidebarSimpleIcon /></Button>
               </div>
             </div>
             {selected.length > 0 && (
@@ -347,122 +480,224 @@ export function FileBrowser(props: FileBrowserProps) {
             )}
           </div>
 
-          {items.length === 0
-            ? (
-                <Empty className="min-h-72">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">{isLoading ? <Spinner /> : hasRemoteConnection ? <MagnifyingGlassIcon /> : <CloudArrowUpIcon />}</EmptyMedia>
-                    <EmptyTitle>{isLoading ? '正在读取对象…' : loadError ? '对象列表读取失败' : !hasRemoteConnection ? '尚未连接存储桶' : search ? '没有找到匹配的文件' : 'Bucket 暂无对象'}</EmptyTitle>
-                    <EmptyDescription>{isLoading ? '正在读取当前目录。' : loadError ? '请检查连接配置或网络后重试。' : !hasRemoteConnection ? '连接存储桶后即可浏览对象。' : search ? '试试其他搜索词' : '这个 Bucket 或目录当前没有对象。'}</EmptyDescription>
-                  </EmptyHeader>
-                  {!hasRemoteConnection && !isLoading && <Button onClick={onConnect}>添加并连接存储桶</Button>}
-                </Empty>
-              )
-            : grid
+          <div ref={listViewportRef} className="min-h-0 flex-1 overflow-y-auto">
+            {items.length === 0
               ? (
-                  <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-4">
-                    {items.map(item => (
-                      <ContextMenu key={item.id}>
-                        <ContextMenuTrigger render={<div className="relative min-w-0" onContextMenu={() => onFocus(item.id)} />}>
-                          <Button
-                            variant={focusedItem?.id === item.id ? 'secondary' : 'outline'}
-                            className="h-auto w-full min-w-0 flex-col gap-2 px-3 py-5"
-                            onClick={() => onFocus(item.id)}
-                            onDoubleClick={() => onOpenFolder(item)}
-                          >
-                            <FileIcon kind={item.kind} size={28} />
-                            <span className="max-w-full truncate">{item.name}</span>
-                            <span className="text-xs text-muted-foreground">{item.kind === 'folder' ? '文件夹' : item.size}</span>
-                          </Button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="absolute top-2 right-2" aria-label={`${item.name} 的更多操作`} />}>
-                              <DotsThreeIcon />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">{renderFileActions(item, false)}</DropdownMenuContent>
-                          </DropdownMenu>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent>{renderFileActions(item, true)}</ContextMenuContent>
-                      </ContextMenu>
-                    ))}
-                  </div>
+                  <Empty className="min-h-72">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">{isLoading ? <Spinner /> : hasRemoteConnection ? <MagnifyingGlassIcon /> : <CloudArrowUpIcon />}</EmptyMedia>
+                      <EmptyTitle>{isLoading ? '正在读取对象…' : loadError ? '对象列表读取失败' : !hasRemoteConnection ? '尚未连接存储桶' : search ? '没有找到匹配的文件' : 'Bucket 暂无对象'}</EmptyTitle>
+                      <EmptyDescription>{isLoading ? '正在读取当前目录。' : loadError ? '请检查连接配置或网络后重试。' : !hasRemoteConnection ? '连接存储桶后即可浏览对象。' : search ? '试试其他搜索词' : '这个 Bucket 或目录当前没有对象。'}</EmptyDescription>
+                    </EmptyHeader>
+                    {!hasRemoteConnection && !isLoading && <Button onClick={onConnect}>添加并连接存储桶</Button>}
+                  </Empty>
                 )
-              : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-[#fbfcfd]">
-                        <TableHead className="w-10"><Checkbox aria-label="选择当前目录全部项目" checked={allSelected} onCheckedChange={onSelectAll} /></TableHead>
-                        <TableHead>
-                          <Button variant="ghost" className="px-0" onClick={onSortChange}>
-                            名称
-                            <ArrowDownIcon data-icon="inline-end" className={cn('transition-transform', sortAscending && 'rotate-180')} />
-                          </Button>
-                        </TableHead>
-                        <TableHead className="w-24">文件大小</TableHead>
-                        <TableHead className="hidden w-32 lg:table-cell">修改时间</TableHead>
-                        <TableHead className="w-10"><span className="sr-only">操作</span></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+              : grid
+                ? (
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-3 p-4">
                       {items.map(item => (
                         <ContextMenu key={item.id}>
-                          <ContextMenuTrigger render={<TableRow data-state={focusedItem?.id === item.id ? 'selected' : undefined} onClick={() => onFocus(item.id)} onDoubleClick={() => onOpenFolder(item)} onContextMenu={() => onFocus(item.id)} className="cursor-pointer data-[state=selected]:bg-[#fffaf5]" />}>
-                            <TableCell onClick={event => event.stopPropagation()}><Checkbox aria-label={`选择 ${item.name}`} checked={selected.includes(item.id)} onCheckedChange={() => onToggleSelected(item.id)} /></TableCell>
-                            <TableCell>
-                              <div className="flex min-w-0 items-center gap-2">
-                                <FileBadge kind={item.kind} className="size-7 rounded-md" />
-                                {item.kind === 'folder'
-                                  ? (
-                                      <Button
-                                        variant="link"
-                                        className="min-w-0 p-0 text-[#455366] hover:text-primary"
-                                        onClick={(event) => {
-                                          event.stopPropagation()
-                                          onOpenFolder(item)
-                                        }}
-                                      >
-                                        {item.name}
-                                        <CaretRightIcon data-icon="inline-end" />
-                                      </Button>
-                                    )
-                                  : <span className="truncate font-medium">{item.name}</span>}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">{item.size}</TableCell>
-                            <TableCell className="hidden text-muted-foreground lg:table-cell">{item.updated}</TableCell>
-                            <TableCell onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`${item.name} 的更多操作`} />}>
-                                  <DotsThreeIcon />
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">{renderFileActions(item, false)}</DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
+                          <ContextMenuTrigger render={<div className="relative w-full max-w-44 min-w-0" onContextMenu={() => onFocus(item.id)} />}>
+                            <Button
+                              variant={focusedItem?.id === item.id ? 'secondary' : 'outline'}
+                              className="aspect-square h-auto w-full min-w-0 flex-col gap-2 px-3 py-4"
+                              onClick={() => onFocus(item.id)}
+                              onDoubleClick={() => onOpenFolder(item)}
+                            >
+                              <FileIcon kind={item.kind} size={28} />
+                              <span className="max-w-full truncate">{item.name}</span>
+                              <span className="text-xs text-muted-foreground">{item.kind === 'folder' ? '文件夹' : item.size}</span>
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="absolute top-2 right-2" aria-label={`${item.name} 的更多操作`} />}>
+                                <DotsThreeIcon />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">{renderFileActions(item, false)}</DropdownMenuContent>
+                            </DropdownMenu>
                           </ContextMenuTrigger>
                           <ContextMenuContent>{renderFileActions(item, true)}</ContextMenuContent>
                         </ContextMenu>
                       ))}
-                    </TableBody>
-                  </Table>
-                )}
+                    </div>
+                  )
+                : (
+                    <Table containerClassName="overflow-visible">
+                      <TableHeader>
+                        <TableRow className="bg-[#fbfcfd]">
+                          <TableHead className="sticky top-0 z-10 w-10 bg-[#fbfcfd]"><Checkbox aria-label="选择当前目录全部项目" checked={allSelected} onCheckedChange={onSelectAll} /></TableHead>
+                          <TableHead className="sticky top-0 z-10 bg-[#fbfcfd]">
+                            <Button variant="ghost" className="px-0" onClick={onSortChange}>
+                              名称
+                              <ArrowDownIcon data-icon="inline-end" className={cn('transition-transform', sortAscending && 'rotate-180')} />
+                            </Button>
+                          </TableHead>
+                          <TableHead className="sticky top-0 z-10 w-24 bg-[#fbfcfd]">文件大小</TableHead>
+                          <TableHead className="sticky top-0 z-10 hidden w-32 bg-[#fbfcfd] lg:table-cell">修改时间</TableHead>
+                          <TableHead className="sticky top-0 z-10 w-10 bg-[#fbfcfd]"><span className="sr-only">操作</span></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map(item => (
+                          <ContextMenu key={item.id}>
+                            <ContextMenuTrigger render={<TableRow data-state={focusedItem?.id === item.id ? 'selected' : undefined} onClick={() => onFocus(item.id)} onDoubleClick={() => onOpenFolder(item)} onContextMenu={() => onFocus(item.id)} className="cursor-pointer data-[state=selected]:bg-[#fffaf5]" />}>
+                              <TableCell onClick={event => event.stopPropagation()}><Checkbox aria-label={`选择 ${item.name}`} checked={selected.includes(item.id)} onCheckedChange={() => onToggleSelected(item.id)} /></TableCell>
+                              <TableCell>
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <FileBadge kind={item.kind} className="size-7 rounded-md" />
+                                  {item.kind === 'folder'
+                                    ? (
+                                        <Button
+                                          variant="link"
+                                          className="min-w-0 p-0 text-[#455366] hover:text-primary"
+                                          onClick={(event) => {
+                                            event.stopPropagation()
+                                            onOpenFolder(item)
+                                          }}
+                                        >
+                                          {item.name}
+                                          <CaretRightIcon data-icon="inline-end" />
+                                        </Button>
+                                      )
+                                    : <span className="truncate font-medium">{item.name}</span>}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">{item.size}</TableCell>
+                              <TableCell className="hidden text-muted-foreground lg:table-cell">{item.updated}</TableCell>
+                              <TableCell onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`${item.name} 的更多操作`} />}>
+                                    <DotsThreeIcon />
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">{renderFileActions(item, false)}</DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </ContextMenuTrigger>
+                            <ContextMenuContent>{renderFileActions(item, true)}</ContextMenuContent>
+                          </ContextMenu>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+            {displayMode === 'infinite' && <div ref={loadMoreSentinelRef} className="h-px w-full" aria-hidden="true" />}
+          </div>
         </CardContent>
-        <CardFooter className="justify-between border-t pt-3 text-xs text-muted-foreground">
-          <span>
-            显示
-            {items.length}
-            {' '}
-            个项目
-          </span>
-          {hasNextPage && onLoadMore
-            ? (
-                <Button variant="link" size="sm" className="h-auto p-0" disabled={isLoadingMore} onClick={onLoadMore}>
-                  {isLoadingMore && <Spinner data-icon="inline-start" />}
-                  {isLoadingMore ? '正在加载…' : '加载更多'}
-                </Button>
-              )
-            : <span>{hasRemoteConnection ? '已加载全部对象' : '第 1 页'}</span>}
+        <CardFooter className="justify-between gap-3 border-t pt-3 text-xs text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate">
+              {!hasRemoteConnection
+                ? '尚未连接存储桶'
+                : isCounting
+                  ? '正在统计对象数量…'
+                  : countError
+                    ? '对象总数获取失败'
+                    : displayMode === 'infinite'
+                      ? `已加载 ${loadedCount} / ${totalCount ?? 0} 个项目`
+                      : `共 ${totalCount ?? 0} 个项目`}
+            </span>
+            {countError && onRetryCount && <Button variant="link" size="sm" className="h-auto shrink-0 p-0" onClick={onRetryCount}>重试</Button>}
+          </div>
+          {hasRemoteConnection && (
+            <div className="flex shrink-0 items-center gap-2">
+              {displayMode === 'pagination'
+                ? (
+                    <Pagination className="mx-0 w-auto">
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            href="#"
+                            text="上一页"
+                            aria-disabled={!canGoToPreviousPage || isLoadingPage}
+                            className={cn((!canGoToPreviousPage || isLoadingPage) && 'pointer-events-none opacity-50')}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              if (canGoToPreviousPage && !isLoadingPage)
+                                onPreviousPage?.()
+                            }}
+                          />
+                        </PaginationItem>
+                        {pageCount && Array.from({ length: pageCount }, (_, index) => index + 1)
+                          .filter(page => page === 1 || page === pageCount || Math.abs(page - currentPage) <= 1)
+                          .map((page, index, pages) => (
+                            <Fragment key={page}>
+                              {index > 0 && page - pages[index - 1] > 1 && (
+                                <PaginationItem><PaginationEllipsis /></PaginationItem>
+                              )}
+                              <PaginationItem>
+                                <PaginationLink
+                                  href="#"
+                                  isActive={page === currentPage}
+                                  aria-label={`第 ${page} 页`}
+                                  aria-current={page === currentPage ? 'page' : undefined}
+                                  aria-disabled={isLoadingPage}
+                                  className={cn(isLoadingPage && 'pointer-events-none opacity-50')}
+                                  onClick={(event) => {
+                                    event.preventDefault()
+                                    if (!isLoadingPage)
+                                      onPageChange?.(page)
+                                  }}
+                                >
+                                  {page}
+                                </PaginationLink>
+                              </PaginationItem>
+                            </Fragment>
+                          ))}
+                        <PaginationItem>
+                          <PaginationNext
+                            href="#"
+                            text="下一页"
+                            aria-disabled={!canGoToNextPage || isLoadingPage}
+                            className={cn((!canGoToNextPage || isLoadingPage) && 'pointer-events-none opacity-50')}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              if (canGoToNextPage && !isLoadingPage)
+                                onNextPage?.()
+                            }}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  )
+                : (
+                    <Button variant="outline" size="sm" disabled={!hasNextPage || isLoadingPage} onClick={() => { void loadNextPage() }}>
+                      {isLoadingPage && <Spinner data-icon="inline-start" />}
+                      {isLoadingPage ? '正在加载…' : hasNextPage ? '加载更多' : '已加载全部'}
+                    </Button>
+                  )}
+              <Tooltip>
+                <TooltipTrigger
+                  render={(
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={displayMode === 'pagination' ? '切换到无限加载模式' : '切换到分页模式'}
+                      aria-pressed={displayMode === 'infinite'}
+                      onClick={() => onDisplayModeChange(displayMode === 'pagination' ? 'infinite' : 'pagination')}
+                    >
+                      {displayMode === 'pagination' ? <InfinityIcon /> : <ListNumbersIcon />}
+                    </Button>
+                  )}
+                />
+                <TooltipContent>{displayMode === 'pagination' ? '切换到无限加载模式' : '切换到分页模式'}</TooltipContent>
+              </Tooltip>
+            </div>
+          )}
         </CardFooter>
       </Card>
-      {showDetails && <FileDetails item={focusedItem} connection={connection} path={path} onCopyKey={onCopyKey} onCopyUrl={onCopyUrl} onOpenFolder={onOpenFolder} onDownload={onDownload} isDownloading={isDownloading} onDelete={item => setDeleteTargets([item])} />}
+      {detailsItem && (
+        <FileDetails
+          item={detailsItem}
+          connection={connection}
+          path={path}
+          onClose={() => setDetailsItem(null)}
+          onCopyUrl={onCopyUrl}
+          onOpenFolder={(item) => {
+            setDetailsItem(null)
+            onOpenFolder(item)
+          }}
+          onDownload={onDownload}
+          isDownloading={isDownloading}
+        />
+      )}
       {previewItem && connectionId && (
         previewItem.kind === 'image'
           ? (

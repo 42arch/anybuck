@@ -251,9 +251,16 @@ pub(crate) async fn copy_only(
         request
             .customize()
             .mutate_request(|request| {
-                request
-                    .headers_mut()
-                    .insert("cf-copy-destination-if-none-match", "*");
+                if request
+                    .uri()
+                    .strip_prefix("https://")
+                    .and_then(|rest| rest.split('/').next())
+                    .is_some_and(|host| host.ends_with(".r2.cloudflarestorage.com"))
+                {
+                    request
+                        .headers_mut()
+                        .insert("cf-copy-destination-if-none-match", "*");
+                }
             })
             .send()
             .await

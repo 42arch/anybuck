@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 pub enum StorageProvider {
     #[default]
     CloudflareR2,
+    AwsS3,
     TencentCos,
+    AliyunOss,
 }
 
 #[derive(Deserialize)]
@@ -23,6 +25,8 @@ pub struct ConnectR2Request {
     pub(crate) endpoint: Option<String>,
     pub(crate) access_key_id: String,
     pub(crate) secret_access_key: String,
+    #[serde(default)]
+    pub(crate) session_token: String,
     pub(crate) bucket: String,
     #[serde(default)]
     pub(crate) remember_connection: bool,
@@ -50,6 +54,8 @@ pub struct SavedR2Connection {
 pub(crate) struct SavedR2Credentials {
     pub(crate) access_key_id: String,
     pub(crate) secret_access_key: String,
+    #[serde(default)]
+    pub(crate) session_token: String,
 }
 
 #[derive(Serialize)]
@@ -91,5 +97,28 @@ mod tests {
         let profile: SavedR2Connection = serde_json::from_str(r#"{"id":"old","name":"Old","accountId":"0123456789abcdef0123456789abcdef","endpoint":"https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com","bucket":"assets"}"#).unwrap();
         assert_eq!(profile.provider, StorageProvider::CloudflareR2);
         assert!(profile.region.is_empty());
+    }
+
+    #[test]
+    fn oss_provider_serializes_for_ipc_and_saved_connections() {
+        let value = serde_json::to_string(&StorageProvider::AliyunOss).unwrap();
+        assert_eq!(value, "\"aliyun-oss\"");
+        assert_eq!(
+            serde_json::from_str::<StorageProvider>(&value).unwrap(),
+            StorageProvider::AliyunOss
+        );
+    }
+
+    #[test]
+    fn aws_provider_and_legacy_credentials_round_trip() {
+        let value = serde_json::to_string(&StorageProvider::AwsS3).unwrap();
+        assert_eq!(value, "\"aws-s3\"");
+        assert_eq!(
+            serde_json::from_str::<StorageProvider>(&value).unwrap(),
+            StorageProvider::AwsS3
+        );
+        let credentials: super::SavedR2Credentials =
+            serde_json::from_str(r#"{"accessKeyId":"key","secretAccessKey":"secret"}"#).unwrap();
+        assert!(credentials.session_token.is_empty());
     }
 }

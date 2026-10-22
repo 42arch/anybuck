@@ -14,6 +14,16 @@ pub async fn list_r2_objects(
 }
 
 #[tauri::command]
+pub async fn count_r2_objects(
+    connection_id: String,
+    prefix: String,
+    state: State<'_, R2ConnectionState>,
+) -> Result<usize, String> {
+    let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
+    objects::count_objects(&client, &bucket, &prefix).await
+}
+
+#[tauri::command]
 pub async fn preview_r2_image(
     connection_id: String,
     key: String,

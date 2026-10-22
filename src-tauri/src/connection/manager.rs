@@ -1,7 +1,7 @@
 use crate::connection::model::{
     ConnectR2Request, R2ConnectionResult, SavedR2Connection, StorageProvider,
 };
-use crate::connection::{cos, r2};
+use crate::connection::{aws, cos, oss, r2};
 use crate::storage::s3::objects::{R2ObjectPage, fetch_page};
 use aws_sdk_s3::Client;
 use std::collections::HashMap;
@@ -21,7 +21,9 @@ pub(crate) async fn prepare_connection(
 ) -> Result<PreparedConnection, String> {
     match request.provider {
         StorageProvider::CloudflareR2 => r2::prepare_connection(request).await,
+        StorageProvider::AwsS3 => aws::prepare_connection(request).await,
         StorageProvider::TencentCos => cos::prepare_connection(request).await,
+        StorageProvider::AliyunOss => oss::prepare_connection(request).await,
     }
 }
 
@@ -33,7 +35,9 @@ pub(crate) fn new_connection_id(provider: StorageProvider) -> String {
     let sequence = NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed);
     let prefix = match provider {
         StorageProvider::CloudflareR2 => "r2",
+        StorageProvider::AwsS3 => "s3",
         StorageProvider::TencentCos => "cos",
+        StorageProvider::AliyunOss => "oss",
     };
     format!("{prefix}-{timestamp}-{sequence}")
 }

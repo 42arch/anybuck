@@ -47,12 +47,15 @@ interface AppSidebarProps {
 
 export function AppSidebar({ view, connections, connectingConnectionIds, activeConnectionId, onViewChange, onConnectionChange, onManageConnection, onConnectConnection, onDisconnectConnection, onAddConnection }: AppSidebarProps) {
   const { setOpenMobile } = useSidebar()
-  const [connectionsExpanded, setConnectionsExpanded] = useState<Record<StorageProvider, boolean>>({ 'cloudflare-r2': true, 'tencent-cos': true })
+  const [connectionsExpanded, setConnectionsExpanded] = useState<Record<StorageProvider, boolean>>({ 'cloudflare-r2': true, 'aws-s3': true, 'tencent-cos': true, 'aliyun-oss': true })
   const [selectedConnectionId, setSelectedConnectionId] = useState(activeConnectionId)
   const providerGroups: { id: StorageProvider, label: string }[] = [
     { id: 'cloudflare-r2', label: 'Cloudflare R2' },
+    { id: 'aws-s3', label: 'AWS S3' },
     { id: 'tencent-cos', label: '腾讯云 COS' },
+    { id: 'aliyun-oss', label: '阿里云 OSS' },
   ]
+  const visibleProviderGroups = providerGroups.filter(group => connections.some(item => item.provider === group.id))
 
   function selectView(nextView: View) {
     onViewChange(nextView)
@@ -129,7 +132,7 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
           </SidebarGroupAction>
           <SidebarGroupContent>
             <SidebarMenu>
-              {providerGroups.map(group => (
+              {visibleProviderGroups.map(group => (
                 <SidebarMenuItem key={group.id}>
                   <SidebarMenuButton
                     aria-expanded={connectionsExpanded[group.id]}
@@ -184,13 +187,6 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                           </ContextMenu>
                         </SidebarMenuSubItem>
                       ))}
-                      {!connections.some(item => item.provider === group.id) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton render={<button type="button" />} onClick={() => openConnectionDialog(group.id)}>
-                            <span>添加存储桶连接</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
                     </SidebarMenuSub>
                   )}
                 </SidebarMenuItem>

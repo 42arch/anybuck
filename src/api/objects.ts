@@ -9,6 +9,10 @@ export function listR2Objects(connectionId: string, prefix: string, continuation
   })
 }
 
+export function countR2Objects(connectionId: string, prefix: string) {
+  return invoke<number>('count_r2_objects', { connectionId, prefix })
+}
+
 export function previewR2Image(connectionId: string, key: string) {
   return invoke<ArrayBuffer>('preview_r2_image', { connectionId, key })
 }

@@ -31,7 +31,7 @@ pub(crate) async fn enqueue_r2_uploads(
         return Ok(Vec::new());
     }
     let (client, bucket) = client_for_connection(&connection_id, connections.inner())?;
-    let mut tasks = Vec::new();
+    let mut files = Vec::with_capacity(local_paths.len());
     for local_path in local_paths {
         let path = PathBuf::from(&local_path);
         let metadata = fs::metadata(&path).map_err(|error| format!("无法读取所选文件：{error}"))?;
@@ -43,8 +43,13 @@ pub(crate) async fn enqueue_r2_uploads(
             .and_then(|name| name.to_str())
             .filter(|name| !name.is_empty())
             .ok_or_else(|| "无法读取所选文件名。".to_string())?;
+        files.push((local_path, file_name.to_string(), metadata.len()));
+    }
+
+    let mut tasks = Vec::with_capacity(files.len());
+    for (local_path, file_name, size) in files {
         let key = if prefix.trim_matches('/').is_empty() {
-            file_name.to_string()
+            file_name.clone()
         } else {
             format!("{}/{file_name}", prefix.trim_matches('/'))
         };
@@ -53,12 +58,12 @@ pub(crate) async fn enqueue_r2_uploads(
             "upload",
             &connection_id,
             &bucket,
-            file_name,
+            &file_name,
             &key,
             &local_path,
             true,
         );
-        task.total_bytes = Some(metadata.len());
+        task.total_bytes = Some(size);
         manager.add_task(&app, task.clone())?;
         spawn_task(
             app.clone(),

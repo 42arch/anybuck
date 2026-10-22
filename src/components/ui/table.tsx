@@ -1,11 +1,11 @@
 import { cn } from 'cn'
 import * as React from 'react'
 
-function Table({ className, ...props }: React.ComponentProps<'table'>) {
+function Table({ className, containerClassName, ...props }: React.ComponentProps<'table'> & { containerClassName?: string }) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className={cn('relative w-full overflow-x-auto', containerClassName)}
     >
       <table
         data-slot="table"

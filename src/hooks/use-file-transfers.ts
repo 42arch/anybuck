@@ -16,6 +16,17 @@ export function useFileTransfers({ connection, defaultDownloadPath, setDefaultDo
   const [pendingDownload, setPendingDownload] = useState<DownloadPlanSummary | null>(null)
   const [isSelectingFiles, setIsSelectingFiles] = useState(false)
 
+  function stageUpload(prefix: string, paths: string[]) {
+    if (pendingUpload || isSelectingFiles || paths.length === 0)
+      return
+    if (!connection) {
+      onNotice('请先添加并连接存储桶。')
+      return
+    }
+
+    setPendingUpload({ connectionId: connection.connectionId, bucket: connection.bucket, prefix, paths })
+  }
+
   async function uploadFiles(prefix = '') {
     if (pendingUpload || isSelectingFiles)
       return
@@ -40,7 +51,7 @@ export function useFileTransfers({ connection, defaultDownloadPath, setDefaultDo
     if (paths.length === 0)
       return
 
-    setPendingUpload({ connectionId: connection.connectionId, bucket: connection.bucket, prefix, paths })
+    stageUpload(prefix, paths)
   }
 
   async function confirmUpload() {
@@ -120,6 +131,7 @@ export function useFileTransfers({ connection, defaultDownloadPath, setDefaultDo
     pendingDownload,
     isSelectingFiles,
     uploadFiles,
+    stageUpload,
     downloadItems,
     confirmUpload,
     confirmDownload,

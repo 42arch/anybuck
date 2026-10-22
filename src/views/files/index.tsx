@@ -1,34 +1,45 @@
 import type { R2ConnectionEntry } from '@/types/connection'
 import type { R2Object, StorageItem } from '@/types/storage'
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { createR2Folder, deleteR2Objects, listR2Objects } from '@/api/objects'
+import { countR2Objects, createR2Folder, deleteR2Objects, listR2Objects } from '@/api/objects'
 import { enqueueR2ObjectOperation } from '@/api/transfers'
 import { useR2Connection } from '@/hooks/use-r2-connection'
 import { toStorageItems } from '@/lib/storage-items'
 import { FileBrowser } from './file-browser'
 
 const emptyObjects: R2Object[] = []
+const objectsPageSize = 100
 const objectsQueryKey = (connectionId: string | undefined, prefix: string) => ['storage', 'r2', 'objects', connectionId ?? null, prefix] as const
 
 interface FilesViewProps {
   selectedConnection: Pick<R2ConnectionEntry, 'bucket'> | null
   onAddConnection: () => void
   onUpload: (prefix: string) => void
+  onDropUpload: (prefix: string, paths: string[]) => void
   isUploading: boolean
   onDownload: (prefix: string, items: StorageItem[]) => void
   isDownloading: boolean
   onNotice: (message: string) => void
 }
 
-export function FilesView({ selectedConnection, onAddConnection, onUpload, isUploading, onDownload, isDownloading, onNotice }: FilesViewProps) {
+export function FilesView({ selectedConnection, onAddConnection, onUpload, onDropUpload, isUploading, onDownload, isDownloading, onNotice }: FilesViewProps) {
   const { connection, isRestoring } = useR2Connection()
   const [path, setPath] = useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [focused, setFocused] = useState<string | null>(null)
-  const [showDetails, setShowDetails] = useState(false)
   const [grid, setGrid] = useState(false)
+  const [displayMode, setDisplayMode] = useState<'pagination' | 'infinite'>('pagination')
+  const pageScope = `${connection?.connectionId ?? ''}:${path}`
+  const [pageState, setPageState] = useState({ scope: pageScope, index: 0 })
+  const pageIndex = pageState.scope === pageScope ? pageState.index : 0
+  const setPageIndex = (next: number | ((current: number) => number)) => {
+    setPageState((current) => {
+      const currentIndex = current.scope === pageScope ? current.index : 0
+      return { scope: pageScope, index: typeof next === 'function' ? next(currentIndex) : next }
+    })
+  }
   const [sortAscending, setSortAscending] = useState(true)
   const connectionId = connection?.connectionId
   const queryClient = useQueryClient()
@@ -37,6 +48,11 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, isUpl
     queryFn: ({ pageParam }) => listR2Objects(connectionId!, path, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: lastPage => lastPage.nextToken ?? undefined,
+    enabled: Boolean(connectionId),
+  })
+  const countQuery = useQuery({
+    queryKey: [...objectsQueryKey(connectionId, path), 'count'],
+    queryFn: () => countR2Objects(connectionId!, path),
     enabled: Boolean(connectionId),
   })
   const deleteMutation = useMutation({
@@ -58,13 +74,17 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, isUpl
     mutationFn: ({ connectionId, keys, destinationPrefix }: { connectionId: string, keys: string[], destinationPrefix: string }) => enqueueR2ObjectOperation(connectionId, keys, destinationPrefix, 'copy'),
   })
   const objects = objectsQuery.data?.pages.flatMap(page => page.objects) ?? emptyObjects
+  const pageObjects = displayMode === 'infinite'
+    ? objects
+    : objectsQuery.data?.pages[pageIndex]?.objects ?? emptyObjects
   const loadError = objectsQuery.error instanceof Error ? objectsQuery.error.message : ''
 
   const bucketName = connection?.bucket ?? selectedConnection?.bucket ?? '未选择存储桶'
   const directoryItems = useMemo(() => connection ? toStorageItems(objects) : [], [connection, objects])
+  const pageDirectoryItems = useMemo(() => connection ? toStorageItems(pageObjects) : [], [connection, pageObjects])
   const visibleItems = useMemo(() => {
     const query = search.trim().toLowerCase()
-    return directoryItems
+    return pageDirectoryItems
       .filter(item => item.name.toLowerCase().includes(query))
       .sort((a, b) => {
         if (a.kind === 'folder' && b.kind !== 'folder')
@@ -73,12 +93,13 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, isUpl
           return 1
         return sortAscending ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
       })
-  }, [directoryItems, search, sortAscending])
+  }, [pageDirectoryItems, search, sortAscending])
   const focusedItem = directoryItems.find(item => item.id === focused)
   const selectedItems = directoryItems.filter(item => selected.includes(item.id))
 
   function navigateTo(nextPath: string) {
     setPath(nextPath)
+    setPageIndex(0)
     setSelected([])
     setFocused(null)
     setSearch('')
@@ -97,34 +118,57 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, isUpl
     onNotice(connection ? `${label}功能尚未接入。` : '请先添加并连接存储桶。')
   }
 
-  async function copyKey(key: string) {
-    try {
-      await navigator.clipboard.writeText(key)
-      onNotice('对象 Key 已复制。')
-    }
-    catch {
-      onNotice('复制失败，请检查剪贴板权限。')
-    }
-  }
-
   async function copyUrl(url: string) {
     try {
       await navigator.clipboard.writeText(url)
       onNotice('对象链接已复制。')
+      return true
     }
     catch {
       onNotice('复制失败，请检查剪贴板权限。')
+      return false
     }
   }
 
   function refreshDirectory() {
     setSearch('')
     setSelected([])
+    setPageIndex(0)
     if (connection) {
-      void queryClient.resetQueries({ queryKey: objectsQueryKey(connection.connectionId, path), exact: true })
+      void queryClient.resetQueries({ queryKey: objectsQueryKey(connection.connectionId, path) })
       return
     }
     onNotice('请先添加并连接存储桶。')
+  }
+
+  function changeSearch(value: string) {
+    setSearch(value)
+    setPageIndex(0)
+  }
+
+  async function goToPage(page: number) {
+    const targetIndex = page - 1
+    if (targetIndex < 0 || (countQuery.data !== undefined && page > Math.max(1, Math.ceil(countQuery.data / objectsPageSize))))
+      return
+
+    let loadedPageCount = objectsQuery.data?.pages.length ?? 0
+    if (targetIndex < loadedPageCount) {
+      setPageIndex(targetIndex)
+      return
+    }
+    if (objectsQuery.isFetchingNextPage)
+      return
+
+    while (loadedPageCount <= targetIndex) {
+      if (!objectsQuery.hasNextPage)
+        return
+      const result = await objectsQuery.fetchNextPage()
+      const nextPageCount = result.data?.pages.length ?? 0
+      if (nextPageCount <= loadedPageCount)
+        return
+      loadedPageCount = nextPageCount
+    }
+    setPageIndex(targetIndex)
   }
 
   async function deleteItems(items: StorageItem[]) {
@@ -132,6 +176,7 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, isUpl
       return
     setSelected([])
     setFocused(null)
+    setPageIndex(0)
     try {
       const result = await deleteMutation.mutateAsync({ connectionId, keys: items.map(item => item.id) })
       onNotice(result.failedKeys.length > 0
@@ -175,19 +220,40 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, isUpl
     connection,
     onConnect: onAddConnection,
     onUpload: () => onUpload(path),
+    onDropUpload: (paths: string[]) => onDropUpload(path, paths),
+    onDropError: onNotice,
     isUploading,
     onDownload: (items: StorageItem[]) => onDownload(path, items),
     isDownloading,
     path,
     items: visibleItems,
+    loadedCount: objects.length,
+    totalCount: countQuery.data,
+    isCounting: countQuery.isFetching,
+    countError: countQuery.error instanceof Error ? countQuery.error.message : '',
+    currentPage: pageIndex + 1,
+    displayMode,
+    onDisplayModeChange: setDisplayMode,
+    pageCount: countQuery.data === undefined ? undefined : Math.max(1, Math.ceil(countQuery.data / objectsPageSize)),
+    canGoToPreviousPage: pageIndex > 0,
+    canGoToNextPage: Boolean(objectsQuery.hasNextPage) || pageIndex + 1 < (objectsQuery.data?.pages.length ?? 0),
+    onPreviousPage: () => setPageIndex(index => Math.max(0, index - 1)),
+    onNextPage: () => { void goToPage(pageIndex + 2) },
+    onPageChange: (page: number) => { void goToPage(page) },
+    isLoadingPage: objectsQuery.isFetchingNextPage,
+    hasNextPage: Boolean(objectsQuery.hasNextPage),
+    onLoadMore: async () => {
+      if (objectsQuery.hasNextPage && !objectsQuery.isFetchingNextPage)
+        await objectsQuery.fetchNextPage()
+    },
+    onRetryCount: () => { void countQuery.refetch() },
     focusedItem,
     selected,
     selectedItems,
     search,
     grid,
-    showDetails,
     sortAscending,
-    onSearchChange: setSearch,
+    onSearchChange: changeSearch,
     onNavigate: navigateTo,
     onFocus: setFocused,
     onOpenFolder: openFolder,
@@ -195,15 +261,14 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, isUpl
     onSelectAll: () => setSelected(visibleItems.every(item => selected.includes(item.id)) ? [] : visibleItems.map(item => item.id)),
     onClearSelection: () => setSelected([]),
     onGridChange: setGrid,
-    onDetailsChange: setShowDetails,
     onSortChange: () => setSortAscending(value => !value),
     onRefresh: refreshDirectory,
-    onCopyKey: copyKey,
     onCopyUrl: copyUrl,
     onCreateFolder: async (name: string) => {
       if (!connectionId)
         throw new Error('请先连接存储桶。')
       await createFolderMutation.mutateAsync({ connectionId, prefix: path, name })
+      setPageIndex(0)
       onNotice(`文件夹“${name.trim()}”已创建。`)
     },
     isCreatingFolder: createFolderMutation.isPending,
@@ -216,14 +281,8 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, isUpl
     onCopyObjects: copyItems,
     isCopying: copyMutation.isPending,
     isLoading: objectsQuery.isFetching || isRestoring,
-    isLoadingMore: objectsQuery.isFetchingNextPage,
     loadError,
     hasRemoteConnection: Boolean(connection),
-    hasNextPage: Boolean(objectsQuery.hasNextPage),
-    onLoadMore: () => {
-      if (objectsQuery.hasNextPage && !objectsQuery.isFetchingNextPage)
-        void objectsQuery.fetchNextPage()
-    },
   }
 
   return (

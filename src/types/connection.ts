@@ -1,6 +1,6 @@
 import type { R2ObjectPage } from '@/types/storage'
 
-export type StorageProvider = 'cloudflare-r2' | 'tencent-cos'
+export type StorageProvider = 'cloudflare-r2' | 'aws-s3' | 'tencent-cos' | 'aliyun-oss'
 
 export interface ConnectR2Request {
   connectionId?: string
@@ -11,6 +11,7 @@ export interface ConnectR2Request {
   endpoint?: string
   accessKeyId: string
   secretAccessKey: string
+  sessionToken?: string
   bucket: string
   rememberConnection: boolean
 }
