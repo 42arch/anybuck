@@ -1,30 +1,37 @@
-import type { R2ConnectionEntry } from '@/types/connection'
-import type { R2Object, StorageItem } from '@/types/storage'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
-import { countR2Objects, createR2Folder, deleteR2Objects, listR2Objects } from '@/api/objects'
-import { enqueueR2ObjectOperation } from '@/api/transfers'
-import { useR2Connection } from '@/hooks/use-r2-connection'
+import type { StorageItem, StorageObject } from '@/types/storage'
+import { CloudArrowUpIcon } from '@phosphor-icons/react'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { countObjects, listObjects } from '@/api/objects'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Card, CardContent } from '@/components/ui/card'
+import { useFilesDragDrop } from '@/hooks/use-files-drag-drop'
+import { useStorageConnection } from '@/hooks/use-storage-connection'
+import { showNotice } from '@/lib/notice'
 import { toStorageItems } from '@/lib/storage-items'
-import { FileBrowser } from './file-browser'
+import { useConnectionDialogStore } from '@/store/connection-dialog-store'
+import { useFileTransferStore } from '@/store/file-transfer-store'
+import { CreateFolderDialog } from './create-folder-dialog'
+import { DeleteConfirmDialog } from './delete-confirm-dialog'
+import { FileDetails } from './file-details'
+import { FilePreviewDialog } from './file-preview-dialog'
+import { FilesEmpty } from './files-empty'
+import { FilesGrid } from './files-grid'
+import { FilesPagination } from './files-pagination'
+import { FilesTable } from './files-table'
+import { FilesToolbar } from './files-toolbar'
+import { ObjectDestinationDialog } from './object-destination-dialog'
 
-const emptyObjects: R2Object[] = []
+const emptyObjects: StorageObject[] = []
 const objectsPageSize = 100
-const objectsQueryKey = (connectionId: string | undefined, prefix: string) => ['storage', 'r2', 'objects', connectionId ?? null, prefix] as const
+const objectsQueryKey = (connectionId: string | undefined, prefix: string) => ['storage', 'objects', connectionId ?? null, prefix] as const
 
-interface FilesViewProps {
-  selectedConnection: Pick<R2ConnectionEntry, 'bucket'> | null
-  onAddConnection: () => void
-  onUpload: (prefix: string) => void
-  onDropUpload: (prefix: string, paths: string[]) => void
-  isUploading: boolean
-  onDownload: (prefix: string, items: StorageItem[]) => void
-  isDownloading: boolean
-  onNotice: (message: string) => void
-}
+export function FilesView() {
+  const { connection, selectedConnection, selectionVersion, isRestoring } = useStorageConnection()
+  const openConnectionDialog = useConnectionDialogStore(state => state.openDialog)
+  const downloadItems = useFileTransferStore(state => state.downloadItems)
+  const onNotice = showNotice
 
-export function FilesView({ selectedConnection, onAddConnection, onUpload, onDropUpload, isUploading, onDownload, isDownloading, onNotice }: FilesViewProps) {
-  const { connection, isRestoring } = useR2Connection()
   const [path, setPath] = useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string[]>([])
@@ -41,45 +48,59 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, onDro
     })
   }
   const [sortAscending, setSortAscending] = useState(true)
+
+  const [deleteTargets, setDeleteTargets] = useState<StorageItem[]>([])
+  const [destinationAction, setDestinationAction] = useState<{ operation: 'move' | 'copy', items: StorageItem[] } | null>(null)
+  const [previewItem, setPreviewItem] = useState<StorageItem | null>(null)
+  const [detailsItem, setDetailsItem] = useState<StorageItem | null>(null)
+  const [createFolderOpen, setCreateFolderOpen] = useState(false)
+
+  const listViewportRef = useRef<HTMLDivElement>(null)
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
+  const loadMoreInFlightRef = useRef(false)
+
+  const { dragOver, dropZoneRef } = useFilesDragDrop({
+    enabled: Boolean(connection),
+    path,
+  })
+
+  useEffect(() => {
+    setPath('')
+    setSearch('')
+    setSelected([])
+    setFocused(null)
+    setDeleteTargets([])
+    setDestinationAction(null)
+    setPreviewItem(null)
+    setDetailsItem(null)
+    setCreateFolderOpen(false)
+    setPageState({ scope: `${connection?.connectionId ?? ''}:`, index: 0 })
+  }, [connection?.connectionId, selectionVersion])
+
   const connectionId = connection?.connectionId
+  const hasRemoteConnection = Boolean(connection)
+  const bucketName = connection?.bucket ?? selectedConnection?.bucket ?? '未选择存储桶'
+
   const queryClient = useQueryClient()
   const objectsQuery = useInfiniteQuery({
     queryKey: objectsQueryKey(connectionId, path),
-    queryFn: ({ pageParam }) => listR2Objects(connectionId!, path, pageParam),
+    queryFn: ({ pageParam }) => listObjects(connectionId!, path, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: lastPage => lastPage.nextToken ?? undefined,
     enabled: Boolean(connectionId),
   })
   const countQuery = useQuery({
     queryKey: [...objectsQueryKey(connectionId, path), 'count'],
-    queryFn: () => countR2Objects(connectionId!, path),
+    queryFn: () => countObjects(connectionId!, path),
     enabled: Boolean(connectionId),
   })
-  const deleteMutation = useMutation({
-    mutationFn: ({ connectionId, keys }: { connectionId: string, keys: string[] }) => deleteR2Objects(connectionId, keys),
-    onSettled: (_result, _error, { connectionId }) => queryClient.invalidateQueries({
-      queryKey: ['storage', 'r2', 'objects', connectionId],
-    }),
-  })
-  const createFolderMutation = useMutation({
-    mutationFn: ({ connectionId, prefix, name }: { connectionId: string, prefix: string, name: string }) => createR2Folder(connectionId, prefix, name),
-    onSuccess: (_result, { connectionId }) => queryClient.invalidateQueries({
-      queryKey: ['storage', 'r2', 'objects', connectionId],
-    }),
-  })
-  const moveMutation = useMutation({
-    mutationFn: ({ connectionId, keys, destinationPrefix }: { connectionId: string, keys: string[], destinationPrefix: string }) => enqueueR2ObjectOperation(connectionId, keys, destinationPrefix, 'move'),
-  })
-  const copyMutation = useMutation({
-    mutationFn: ({ connectionId, keys, destinationPrefix }: { connectionId: string, keys: string[], destinationPrefix: string }) => enqueueR2ObjectOperation(connectionId, keys, destinationPrefix, 'copy'),
-  })
+
   const objects = objectsQuery.data?.pages.flatMap(page => page.objects) ?? emptyObjects
   const pageObjects = displayMode === 'infinite'
     ? objects
     : objectsQuery.data?.pages[pageIndex]?.objects ?? emptyObjects
   const loadError = objectsQuery.error instanceof Error ? objectsQuery.error.message : ''
 
-  const bucketName = connection?.bucket ?? selectedConnection?.bucket ?? '未选择存储桶'
   const directoryItems = useMemo(() => connection ? toStorageItems(objects) : [], [connection, objects])
   const pageDirectoryItems = useMemo(() => connection ? toStorageItems(pageObjects) : [], [connection, pageObjects])
   const visibleItems = useMemo(() => {
@@ -94,8 +115,20 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, onDro
         return sortAscending ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
       })
   }, [pageDirectoryItems, search, sortAscending])
+
   const focusedItem = directoryItems.find(item => item.id === focused)
   const selectedItems = directoryItems.filter(item => selected.includes(item.id))
+
+  const pageCount = countQuery.data === undefined ? undefined : Math.max(1, Math.ceil(countQuery.data / objectsPageSize))
+  const canGoToNextPage = Boolean(objectsQuery.hasNextPage) || pageIndex + 1 < (objectsQuery.data?.pages.length ?? 0)
+  const currentPage = pageIndex + 1
+  const isLoading = objectsQuery.isFetching || isRestoring
+  const isLoadingPage = objectsQuery.isFetchingNextPage
+  const hasNextPage = Boolean(objectsQuery.hasNextPage)
+  const loadedCount = objects.length
+  const totalCount = countQuery.data
+  const isCounting = countQuery.isFetching
+  const countError = countQuery.error instanceof Error ? countQuery.error.message : ''
 
   function navigateTo(nextPath: string) {
     setPath(nextPath)
@@ -116,18 +149,6 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, onDro
 
   function unavailableAction(label: string) {
     onNotice(connection ? `${label}功能尚未接入。` : '请先添加并连接存储桶。')
-  }
-
-  async function copyUrl(url: string) {
-    try {
-      await navigator.clipboard.writeText(url)
-      onNotice('对象链接已复制。')
-      return true
-    }
-    catch {
-      onNotice('复制失败，请检查剪贴板权限。')
-      return false
-    }
   }
 
   function refreshDirectory() {
@@ -171,137 +192,217 @@ export function FilesView({ selectedConnection, onAddConnection, onUpload, onDro
     setPageIndex(targetIndex)
   }
 
-  async function deleteItems(items: StorageItem[]) {
-    if (!connectionId || items.length === 0)
+  const loadNextPage = useCallback(async () => {
+    if (!objectsQuery.hasNextPage || objectsQuery.isFetchingNextPage || loadMoreInFlightRef.current)
       return
-    setSelected([])
-    setFocused(null)
-    setPageIndex(0)
+    loadMoreInFlightRef.current = true
     try {
-      const result = await deleteMutation.mutateAsync({ connectionId, keys: items.map(item => item.id) })
-      onNotice(result.failedKeys.length > 0
-        ? `已删除 ${result.deletedCount} 个对象，${result.failedKeys.length} 个对象删除失败。`
-        : `已删除 ${result.deletedCount} 个对象。`)
+      await objectsQuery.fetchNextPage()
     }
-    catch (cause) {
-      onNotice(`删除失败：${cause instanceof Error ? cause.message : String(cause)}`)
+    finally {
+      loadMoreInFlightRef.current = false
     }
-  }
+  }, [objectsQuery])
 
-  async function moveItems(items: StorageItem[], destinationPrefix: string): Promise<boolean> {
-    if (!connectionId || items.length === 0)
-      return false
-    try {
-      await moveMutation.mutateAsync({ connectionId, keys: items.map(item => item.id), destinationPrefix })
-      setSelected([])
-      setFocused(null)
-      return true
-    }
-    catch (cause) {
-      onNotice(`移动失败：${cause instanceof Error ? cause.message : String(cause)}`)
-      return false
-    }
-  }
+  useEffect(() => {
+    const root = listViewportRef.current
+    const sentinel = loadMoreSentinelRef.current
+    if (displayMode !== 'infinite' || !hasRemoteConnection || !hasNextPage || isLoadingPage || !root || !sentinel)
+      return
 
-  async function copyItems(items: StorageItem[], destinationPrefix: string): Promise<boolean> {
-    if (!connectionId || items.length === 0)
-      return false
-    try {
-      await copyMutation.mutateAsync({ connectionId, keys: items.map(item => item.id), destinationPrefix })
-      return true
-    }
-    catch (cause) {
-      onNotice(`复制失败：${cause instanceof Error ? cause.message : String(cause)}`)
-      return false
-    }
-  }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting)
+        void loadNextPage()
+    }, { root, rootMargin: '160px' })
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [displayMode, hasRemoteConnection, hasNextPage, isLoadingPage, loadNextPage])
 
-  const browserProps = {
-    connection,
-    onConnect: onAddConnection,
-    onUpload: () => onUpload(path),
-    onDropUpload: (paths: string[]) => onDropUpload(path, paths),
-    onDropError: onNotice,
-    isUploading,
-    onDownload: (items: StorageItem[]) => onDownload(path, items),
-    isDownloading,
-    path,
-    items: visibleItems,
-    loadedCount: objects.length,
-    totalCount: countQuery.data,
-    isCounting: countQuery.isFetching,
-    countError: countQuery.error instanceof Error ? countQuery.error.message : '',
-    currentPage: pageIndex + 1,
-    displayMode,
-    onDisplayModeChange: setDisplayMode,
-    pageCount: countQuery.data === undefined ? undefined : Math.max(1, Math.ceil(countQuery.data / objectsPageSize)),
-    canGoToPreviousPage: pageIndex > 0,
-    canGoToNextPage: Boolean(objectsQuery.hasNextPage) || pageIndex + 1 < (objectsQuery.data?.pages.length ?? 0),
-    onPreviousPage: () => setPageIndex(index => Math.max(0, index - 1)),
-    onNextPage: () => { void goToPage(pageIndex + 2) },
-    onPageChange: (page: number) => { void goToPage(page) },
-    isLoadingPage: objectsQuery.isFetchingNextPage,
-    hasNextPage: Boolean(objectsQuery.hasNextPage),
-    onLoadMore: async () => {
-      if (objectsQuery.hasNextPage && !objectsQuery.isFetchingNextPage)
-        await objectsQuery.fetchNextPage()
-    },
-    onRetryCount: () => { void countQuery.refetch() },
-    focusedItem,
-    selected,
-    selectedItems,
-    search,
-    grid,
-    sortAscending,
-    onSearchChange: changeSearch,
-    onNavigate: navigateTo,
-    onFocus: setFocused,
-    onOpenFolder: openFolder,
-    onToggleSelected: toggleSelected,
-    onSelectAll: () => setSelected(visibleItems.every(item => selected.includes(item.id)) ? [] : visibleItems.map(item => item.id)),
-    onClearSelection: () => setSelected([]),
-    onGridChange: setGrid,
-    onSortChange: () => setSortAscending(value => !value),
-    onRefresh: refreshDirectory,
-    onCopyUrl: copyUrl,
-    onCreateFolder: async (name: string) => {
-      if (!connectionId)
-        throw new Error('请先连接存储桶。')
-      await createFolderMutation.mutateAsync({ connectionId, prefix: path, name })
-      setPageIndex(0)
-      onNotice(`文件夹“${name.trim()}”已创建。`)
-    },
-    isCreatingFolder: createFolderMutation.isPending,
-    onUnavailableAction: unavailableAction,
-    onDelete: deleteItems,
-    isDeleting: deleteMutation.isPending,
-    connectionId,
-    onMove: moveItems,
-    isMoving: moveMutation.isPending,
-    onCopyObjects: copyItems,
-    isCopying: copyMutation.isPending,
-    isLoading: objectsQuery.isFetching || isRestoring,
-    loadError,
-    hasRemoteConnection: Boolean(connection),
+  function openDestination(operation: 'move' | 'copy', items: StorageItem[]) {
+    if (!connectionId) {
+      unavailableAction(operation === 'move' ? '移动' : '复制')
+      return
+    }
+    setDestinationAction({ operation, items })
   }
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-      {/* <div className="flex min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><DatabaseIcon className="size-4" /></span>
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-xs text-muted-foreground">当前存储桶</span>
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-medium">{bucketName}</span>
-            {selectedConnection && <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">对象存储</span>}
+      <div ref={dropZoneRef} className="relative grid min-h-0 min-w-0 flex-1">
+        {dragOver && (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/10" role="status">
+            <div className="flex flex-col items-center gap-2 rounded-lg border bg-card px-6 py-5 text-center shadow-sm">
+              <CloudArrowUpIcon className="size-8 text-primary" />
+              <span className="font-medium">松开以上传到当前目录</span>
+              <span className="text-xs text-muted-foreground">{`${bucketName}/${path ? `${path}/` : ''}`}</span>
+            </div>
           </div>
-        </div>
-        <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-          <span aria-hidden="true" className={`size-2 rounded-full ${connection ? 'bg-emerald-500' : 'bg-muted-foreground/50'}`} />
-          {connection ? '已连接' : '未连接'}
-        </span>
-      </div> */}
-      <FileBrowser key={connectionId ?? 'disconnected'} bucketName={bucketName} {...browserProps} />
+        )}
+        <Card size="sm" className="h-full min-h-0 min-w-0 gap-0 pt-0">
+          <CardContent className="flex min-h-0 flex-1 min-w-0 flex-col gap-0 overflow-visible px-0">
+            {loadError && (
+              <Alert variant="destructive" className="m-4 mb-0">
+                <AlertTitle>无法读取存储对象</AlertTitle>
+                <AlertDescription>{loadError}</AlertDescription>
+              </Alert>
+            )}
+            <FilesToolbar
+              bucketName={bucketName}
+              path={path}
+              search={search}
+              grid={grid}
+              selectedCount={selected.length}
+              onNavigate={navigateTo}
+              onSearchChange={changeSearch}
+              onCreateFolderClick={() => {
+                if (!hasRemoteConnection) {
+                  unavailableAction('新建文件夹')
+                  return
+                }
+                setCreateFolderOpen(true)
+              }}
+              onRefresh={refreshDirectory}
+              onGridChange={setGrid}
+              onDownloadSelected={() => void downloadItems(path, visibleItems.filter(item => selected.includes(item.id)))}
+              onCopySelected={() => openDestination('copy', selectedItems)}
+              onMoveSelected={() => openDestination('move', selectedItems)}
+              onDeleteSelected={() => setDeleteTargets(visibleItems.filter(item => selected.includes(item.id)))}
+              onClearSelection={() => setSelected([])}
+            />
+
+            <div ref={listViewportRef} className="min-h-0 flex-1 overflow-y-auto">
+              {visibleItems.length === 0
+                ? (
+                    <FilesEmpty
+                      isLoading={isLoading}
+                      hasRemoteConnection={hasRemoteConnection}
+                      loadError={loadError}
+                      search={search}
+                      onConnect={() => openConnectionDialog()}
+                    />
+                  )
+                : grid
+                  ? (
+                      <FilesGrid
+                        items={visibleItems}
+                        focusedId={focusedItem?.id}
+                        onFocus={setFocused}
+                        onOpenFolder={openFolder}
+                        onDetails={(item) => {
+                          setFocused(item.id)
+                          setDetailsItem(item)
+                        }}
+                        onPreview={setPreviewItem}
+                        onDownload={item => void downloadItems(path, [item])}
+                        onCopy={item => openDestination('copy', [item])}
+                        onMove={item => openDestination('move', [item])}
+                        onDelete={(item) => {
+                          setFocused(item.id)
+                          setDeleteTargets([item])
+                        }}
+                      />
+                    )
+                  : (
+                      <FilesTable
+                        items={visibleItems}
+                        selected={selected}
+                        focusedId={focusedItem?.id}
+                        sortAscending={sortAscending}
+                        onSelectAll={() => setSelected(current => visibleItems.length > 0 && visibleItems.every(item => current.includes(item.id)) ? [] : visibleItems.map(item => item.id))}
+                        onToggleSelected={toggleSelected}
+                        onSortToggle={() => setSortAscending(value => !value)}
+                        onFocus={setFocused}
+                        onOpenFolder={openFolder}
+                        onDetails={(item) => {
+                          setFocused(item.id)
+                          setDetailsItem(item)
+                        }}
+                        onPreview={setPreviewItem}
+                        onDownload={item => void downloadItems(path, [item])}
+                        onCopy={item => openDestination('copy', [item])}
+                        onMove={item => openDestination('move', [item])}
+                        onDelete={(item) => {
+                          setFocused(item.id)
+                          setDeleteTargets([item])
+                        }}
+                      />
+                    )}
+              {displayMode === 'infinite' && <div ref={loadMoreSentinelRef} className="h-px w-full" aria-hidden="true" />}
+            </div>
+          </CardContent>
+
+          <FilesPagination
+            hasRemoteConnection={hasRemoteConnection}
+            isCounting={isCounting}
+            countError={countError}
+            displayMode={displayMode}
+            loadedCount={loadedCount}
+            totalCount={totalCount}
+            currentPage={currentPage}
+            pageCount={pageCount}
+            canGoToNextPage={canGoToNextPage}
+            hasNextPage={hasNextPage}
+            isLoadingPage={isLoadingPage}
+            onRetryCount={() => void countQuery.refetch()}
+            onPageChange={page => void goToPage(page)}
+            onLoadMore={() => void loadNextPage()}
+            onDisplayModeChange={setDisplayMode}
+          />
+        </Card>
+
+        {detailsItem && (
+          <FileDetails
+            item={detailsItem}
+            connection={connection}
+            path={path}
+            onClose={() => setDetailsItem(null)}
+            onOpenFolder={(item) => {
+              setDetailsItem(null)
+              openFolder(item)
+            }}
+          />
+        )}
+        <FilePreviewDialog
+          item={previewItem}
+          connectionId={connectionId}
+          onClose={() => setPreviewItem(null)}
+        />
+        <DeleteConfirmDialog
+          open={deleteTargets.length > 0}
+          items={deleteTargets}
+          connectionId={connectionId}
+          onOpenChange={open => !open && setDeleteTargets([])}
+          onSuccess={() => {
+            setSelected([])
+            setFocused(null)
+            setPageIndex(0)
+            setDeleteTargets([])
+          }}
+        />
+        {destinationAction && connectionId && (
+          <ObjectDestinationDialog
+            connectionId={connectionId}
+            items={destinationAction.items}
+            currentPath={path}
+            operation={destinationAction.operation}
+            onOpenChange={open => !open && setDestinationAction(null)}
+            onSuccess={() => {
+              if (destinationAction.operation === 'move') {
+                setSelected([])
+                setFocused(null)
+              }
+            }}
+          />
+        )}
+        <CreateFolderDialog
+          open={createFolderOpen}
+          path={path}
+          connectionId={connectionId}
+          bucketName={bucketName}
+          onOpenChange={setCreateFolderOpen}
+          onSuccess={() => setPageIndex(0)}
+        />
+      </div>
     </div>
   )
 }

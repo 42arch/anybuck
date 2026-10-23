@@ -1,6 +1,6 @@
 import { ArrowsOutIcon } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
-import { previewR2Image } from '@/api/objects'
+import { previewImage } from '@/api/objects'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
@@ -52,7 +52,7 @@ export function ImagePreview({ connectionId, objectKey, name, sizeBytes, mode = 
     let active = true
     let objectUrl: string | undefined
     const timer = window.setTimeout(() => {
-      void previewR2Image(connectionId, objectKey)
+      void previewImage(connectionId, objectKey)
         .then((bytes) => {
           if (!active)
             return

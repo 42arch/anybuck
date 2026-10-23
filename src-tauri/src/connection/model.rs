@@ -1,4 +1,4 @@
-use crate::storage::s3::objects::R2Object;
+use crate::storage::s3::objects::StorageObject;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -13,7 +13,7 @@ pub enum StorageProvider {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ConnectR2Request {
+pub struct ConnectStorageRequest {
     pub(crate) connection_id: Option<String>,
     #[serde(default)]
     pub(crate) provider: StorageProvider,
@@ -34,7 +34,7 @@ pub struct ConnectR2Request {
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SavedR2Connection {
+pub struct SavedStorageConnection {
     #[serde(default)]
     pub(crate) id: String,
     #[serde(default)]
@@ -51,7 +51,7 @@ pub struct SavedR2Connection {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SavedR2Credentials {
+pub(crate) struct SavedStorageCredentials {
     pub(crate) access_key_id: String,
     pub(crate) secret_access_key: String,
     #[serde(default)]
@@ -60,22 +60,23 @@ pub(crate) struct SavedR2Credentials {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct R2ConnectionResult {
+pub struct StorageConnectionResult {
     pub(crate) connection_id: String,
     pub(crate) provider: StorageProvider,
     pub(crate) name: String,
     pub(crate) bucket: String,
     pub(crate) endpoint: String,
-    pub(crate) objects: Vec<R2Object>,
+    pub(crate) objects: Vec<StorageObject>,
     pub(crate) next_token: Option<String>,
 }
+
 #[cfg(test)]
 mod tests {
-    use super::{SavedR2Connection, StorageProvider};
+    use super::{SavedStorageConnection, SavedStorageCredentials, StorageProvider};
 
     #[test]
     fn saved_profile_contains_no_access_keys() {
-        let profile = SavedR2Connection {
+        let profile = SavedStorageConnection {
             id: "r2-test".to_string(),
             name: "Assets".to_string(),
             provider: StorageProvider::CloudflareR2,
@@ -94,7 +95,7 @@ mod tests {
 
     #[test]
     fn legacy_r2_profile_defaults_to_r2() {
-        let profile: SavedR2Connection = serde_json::from_str(r#"{"id":"old","name":"Old","accountId":"0123456789abcdef0123456789abcdef","endpoint":"https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com","bucket":"assets"}"#).unwrap();
+        let profile: SavedStorageConnection = serde_json::from_str(r#"{"id":"old","name":"Old","accountId":"0123456789abcdef0123456789abcdef","endpoint":"https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com","bucket":"assets"}"#).unwrap();
         assert_eq!(profile.provider, StorageProvider::CloudflareR2);
         assert!(profile.region.is_empty());
     }
@@ -117,7 +118,7 @@ mod tests {
             serde_json::from_str::<StorageProvider>(&value).unwrap(),
             StorageProvider::AwsS3
         );
-        let credentials: super::SavedR2Credentials =
+        let credentials: SavedStorageCredentials =
             serde_json::from_str(r#"{"accessKeyId":"key","secretAccessKey":"secret"}"#).unwrap();
         assert!(credentials.session_token.is_empty());
     }

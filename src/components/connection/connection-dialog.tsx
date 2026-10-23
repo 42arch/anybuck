@@ -10,24 +10,31 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { useR2Connection } from '@/hooks/use-r2-connection'
+import { useStorageConnection } from '@/hooks/use-storage-connection'
+
+import { showNotice } from '@/lib/notice'
+import { useConnectionDialogStore } from '@/store/connection-dialog-store'
 
 interface ConnectionDialogProps {
-  open: boolean
-  initialProvider: StorageProvider
-  onOpenChange: (open: boolean) => void
-  onNotice: (message: string) => void
+  open?: boolean
+  initialProvider?: StorageProvider
+  onOpenChange?: (open: boolean) => void
+  onNotice?: (message: string) => void
   onConnected?: () => void
 }
 
-export function ConnectionDialog({
-  open,
-  initialProvider,
-  onOpenChange,
-  onNotice,
-  onConnected,
-}: ConnectionDialogProps) {
-  const { connectionListError, connect } = useR2Connection()
+export function ConnectionDialog(props?: ConnectionDialogProps) {
+  const storeOpen = useConnectionDialogStore(state => state.open)
+  const storeProvider = useConnectionDialogStore(state => state.provider)
+  const storeSetOpen = useConnectionDialogStore(state => state.setOpen)
+
+  const open = props?.open !== undefined ? props.open : storeOpen
+  const initialProvider = props?.initialProvider !== undefined ? props.initialProvider : storeProvider
+  const onOpenChange = props?.onOpenChange ?? storeSetOpen
+  const onNotice = props?.onNotice ?? showNotice
+  const onConnected = props?.onConnected
+
+  const { connectionListError, connect } = useStorageConnection()
   const [name, setName] = useState('')
   const [provider, setProvider] = useState<StorageProvider>(initialProvider)
   const [accountId, setAccountId] = useState<string | null>(null)

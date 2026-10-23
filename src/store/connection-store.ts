@@ -1,18 +1,23 @@
-import type { ActiveR2Connection } from '@/types/connection'
+import type { ActiveStorageConnection } from '@/types/connection'
 import { create } from 'zustand'
 
-interface R2ConnectionState {
-  sessionConnections: ActiveR2Connection[]
+interface ConnectionState {
+  sessionConnections: ActiveStorageConnection[]
   activeConnectionId: string | null
+  selectionVersion: number
   selectConnection: (connectionId: string) => void
-  rememberSessionConnection: (connection: ActiveR2Connection) => void
+  rememberSessionConnection: (connection: ActiveStorageConnection) => void
   removeSessionConnection: (connectionId: string) => void
 }
 
-export const useR2ConnectionStore = create<R2ConnectionState>(set => ({
+export const useConnectionStore = create<ConnectionState>(set => ({
   sessionConnections: [],
   activeConnectionId: null,
-  selectConnection: activeConnectionId => set({ activeConnectionId }),
+  selectionVersion: 0,
+  selectConnection: activeConnectionId => set(state => ({
+    activeConnectionId,
+    selectionVersion: state.selectionVersion + 1,
+  })),
   rememberSessionConnection: connection => set((state) => {
     const sessionConnections = [
       ...state.sessionConnections.filter(item => item.connectionId !== connection.connectionId),

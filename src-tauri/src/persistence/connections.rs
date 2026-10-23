@@ -1,14 +1,22 @@
-use crate::connection::model::{SavedR2Connection, SavedR2Credentials};
+use crate::connection::model::{SavedStorageConnection, SavedStorageCredentials};
 use crate::security::credentials::{credential_entry, keyring_error, restore_previous_secret};
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager};
 
 const KEYRING_USERNAME: &str = "primary";
-const PROFILE_FILE: &str = "r2-connection.json";
+const PROFILE_FILE: &str = "connections.json";
+const LEGACY_PROFILE_FILE: &str = "r2-connection.json";
 
-pub(crate) fn load_saved_connections(app: &AppHandle) -> Result<Vec<SavedR2Connection>, String> {
+pub(crate) fn load_saved_connections(
+    app: &AppHandle,
+) -> Result<Vec<SavedStorageConnection>, String> {
     let path = profile_path(app)?;
-    match fs::read(path) {
+    let file_path = if path.exists() {
+        path
+    } else {
+        legacy_profile_path(app)?
+    };
+    match fs::read(file_path) {
         Ok(contents) => {
             let value: serde_json::Value = serde_json::from_slice(&contents)
                 .map_err(|error| format!("已保存的存储连接信息无法读取：{error}"))?;
@@ -16,7 +24,7 @@ pub(crate) fn load_saved_connections(app: &AppHandle) -> Result<Vec<SavedR2Conne
                 serde_json::from_value(value)
                     .map_err(|error| format!("已保存的存储连接信息无法读取：{error}"))
             } else {
-                let mut profile: SavedR2Connection = serde_json::from_value(value)
+                let mut profile: SavedStorageConnection = serde_json::from_value(value)
                     .map_err(|error| format!("已保存的存储连接信息无法读取：{error}"))?;
                 // Migrate the previous single-profile format and preserve its keyring entry.
                 profile.id = KEYRING_USERNAME.to_string();
@@ -33,8 +41,8 @@ pub(crate) fn load_saved_connections(app: &AppHandle) -> Result<Vec<SavedR2Conne
 
 pub(crate) fn save_connection(
     app: &AppHandle,
-    profile: &SavedR2Connection,
-    credentials: &SavedR2Credentials,
+    profile: &SavedStorageConnection,
+    credentials: &SavedStorageCredentials,
 ) -> Result<(), String> {
     let path = profile_path(app)?;
     let directory = path
@@ -98,6 +106,13 @@ fn profile_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
         .map(|directory| directory.join(PROFILE_FILE))
+        .map_err(|error| format!("无法定位应用数据目录：{error}"))
+}
+
+fn legacy_profile_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|directory| directory.join(LEGACY_PROFILE_FILE))
         .map_err(|error| format!("无法定位应用数据目录：{error}"))
 }
 

@@ -1,5 +1,5 @@
 use super::format_storage_error;
-use super::objects::DownloadR2ObjectsResult;
+use super::objects::DownloadObjectsResult;
 use std::collections::BTreeMap;
 
 const PAGE_SIZE: i32 = 100;
@@ -238,7 +238,7 @@ pub(crate) async fn download_objects(
     prefix: String,
     keys: Vec<String>,
     destination_path: String,
-) -> Result<DownloadR2ObjectsResult, String> {
+) -> Result<DownloadObjectsResult, String> {
     if keys.is_empty() {
         return Err("请先选择要下载的文件或文件夹。".to_string());
     }
@@ -327,7 +327,7 @@ pub(crate) async fn download_objects(
         }
     }
 
-    let mut result = DownloadR2ObjectsResult {
+    let mut result = DownloadObjectsResult {
         downloaded_count: 0,
         failed_keys,
     };

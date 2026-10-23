@@ -1,8 +1,8 @@
 use crate::connection::manager::{
-    R2ConnectionState, connect_runtime, prepare_connection, register_connection,
+    StorageConnectionState, connect_runtime, prepare_connection, register_connection,
 };
 use crate::connection::model::{
-    ConnectR2Request, R2ConnectionResult, SavedR2Connection, SavedR2Credentials,
+    ConnectStorageRequest, SavedStorageConnection, SavedStorageCredentials, StorageConnectionResult,
 };
 use crate::persistence::connections::{
     load_saved_connections, remove_saved_connection, save_connection,
@@ -12,18 +12,18 @@ use crate::storage::s3::objects::fetch_page;
 use tauri::{AppHandle, State};
 
 #[tauri::command]
-pub async fn connect_r2(
+pub async fn connect_storage(
     app: AppHandle,
-    request: ConnectR2Request,
-    state: State<'_, R2ConnectionState>,
-) -> Result<R2ConnectionResult, String> {
+    request: ConnectStorageRequest,
+    state: State<'_, StorageConnectionState>,
+) -> Result<StorageConnectionResult, String> {
     let prepared = prepare_connection(&request).await?;
     let page = fetch_page(&prepared.client, &prepared.profile.bucket, "", None).await?;
 
     if request.remember_connection {
         let app_for_store = app;
         let profile = prepared.profile.clone();
-        let credentials = SavedR2Credentials {
+        let credentials = SavedStorageCredentials {
             access_key_id: request.access_key_id.trim().to_string(),
             secret_access_key: request.secret_access_key.trim().to_string(),
             session_token: request.session_token.trim().to_string(),
@@ -39,7 +39,7 @@ pub async fn connect_r2(
 }
 
 #[tauri::command]
-pub async fn list_saved_r2_connections(app: AppHandle) -> Result<Vec<SavedR2Connection>, String> {
+pub async fn list_saved_connections(app: AppHandle) -> Result<Vec<SavedStorageConnection>, String> {
     let app_for_load = app.clone();
     tauri::async_runtime::spawn_blocking(move || load_saved_connections(&app_for_load))
         .await
@@ -47,11 +47,11 @@ pub async fn list_saved_r2_connections(app: AppHandle) -> Result<Vec<SavedR2Conn
 }
 
 #[tauri::command]
-pub async fn connect_saved_r2_connection(
+pub async fn connect_saved_connection(
     app: AppHandle,
     connection_id: String,
-    state: State<'_, R2ConnectionState>,
-) -> Result<R2ConnectionResult, String> {
+    state: State<'_, StorageConnectionState>,
+) -> Result<StorageConnectionResult, String> {
     let app_for_load = app.clone();
     let connection_id_for_load = connection_id.clone();
     let profile = tauri::async_runtime::spawn_blocking(move || {
@@ -74,7 +74,7 @@ pub async fn connect_saved_r2_connection(
     .await
     .map_err(|error| format!("无法读取系统凭证库：{error}"))??;
     connect_runtime(
-        ConnectR2Request {
+        ConnectStorageRequest {
             connection_id: Some(profile.id),
             provider: profile.provider,
             name: profile.name,
@@ -93,9 +93,9 @@ pub async fn connect_saved_r2_connection(
 }
 
 #[tauri::command]
-pub fn disconnect_r2_connection(
+pub fn disconnect_connection(
     connection_id: String,
-    state: State<'_, R2ConnectionState>,
+    state: State<'_, StorageConnectionState>,
 ) -> Result<(), String> {
     state
         .connections
@@ -106,10 +106,10 @@ pub fn disconnect_r2_connection(
 }
 
 #[tauri::command]
-pub async fn forget_saved_r2_connection(
+pub async fn forget_saved_connection(
     app: AppHandle,
     connection_id: String,
-    state: State<'_, R2ConnectionState>,
+    state: State<'_, StorageConnectionState>,
 ) -> Result<(), String> {
     let id_for_store = connection_id.clone();
     tauri::async_runtime::spawn_blocking(move || remove_saved_connection(&app, &id_for_store))

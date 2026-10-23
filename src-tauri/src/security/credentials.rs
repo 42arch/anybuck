@@ -1,4 +1,4 @@
-use crate::connection::model::{SavedR2Credentials, StorageProvider};
+use crate::connection::model::{SavedStorageCredentials, StorageProvider};
 use keyring::Entry;
 
 const R2_KEYRING_SERVICE: &str = "com.cloudstore.r2";
@@ -9,7 +9,7 @@ const OSS_KEYRING_SERVICE: &str = "com.cloudstore.oss";
 pub(crate) fn read_saved_credentials(
     provider: StorageProvider,
     connection_id: &str,
-) -> Result<SavedR2Credentials, String> {
+) -> Result<SavedStorageCredentials, String> {
     let credentials = credential_entry(provider, connection_id)?
         .get_password()
         .map_err(keyring_error)?;

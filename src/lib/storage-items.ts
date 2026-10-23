@@ -1,8 +1,8 @@
-import type { R2Object, StorageItem } from '@/types/storage'
+import type { StorageItem, StorageObject } from '@/types/storage'
 import { fileKindFromName } from '@/lib/file-kind'
 import { formatBytes } from '@/lib/format-bytes'
 
-export function toStorageItems(objects: R2Object[]): StorageItem[] {
+export function toStorageItems(objects: StorageObject[]): StorageItem[] {
   return objects.map((object) => {
     const kind = object.kind === 'directory' ? 'folder' : fileKindFromName(object.name)
     return {

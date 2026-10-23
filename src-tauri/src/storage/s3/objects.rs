@@ -12,28 +12,28 @@ const DELETE_BATCH_SIZE: usize = 1000;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct R2ObjectPage {
-    pub(crate) objects: Vec<R2Object>,
+pub struct StorageObjectPage {
+    pub(crate) objects: Vec<StorageObject>,
     pub(crate) next_token: Option<String>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DeleteR2ObjectsResult {
+pub struct DeleteObjectsResult {
     pub(crate) deleted_count: usize,
     pub(crate) failed_keys: Vec<String>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DownloadR2ObjectsResult {
+pub struct DownloadObjectsResult {
     pub(crate) downloaded_count: usize,
     pub(crate) failed_keys: Vec<String>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct R2Object {
+pub struct StorageObject {
     pub(crate) key: String,
     pub(crate) name: String,
     pub(crate) kind: &'static str,
@@ -47,7 +47,7 @@ pub(crate) async fn fetch_page(
     bucket: &str,
     prefix: &str,
     continuation_token: Option<&str>,
-) -> Result<R2ObjectPage, String> {
+) -> Result<StorageObjectPage, String> {
     let normalized_prefix = if prefix.is_empty() {
         String::new()
     } else {
@@ -78,7 +78,7 @@ pub(crate) async fn fetch_page(
                 .unwrap_or_default()
                 .to_string();
             if !name.is_empty() {
-                objects.push(R2Object {
+                objects.push(StorageObject {
                     key: key.to_string(),
                     name,
                     kind: "directory",
@@ -98,7 +98,7 @@ pub(crate) async fn fetch_page(
             continue;
         }
         let name = key.rsplit('/').next().unwrap_or_default().to_string();
-        objects.push(R2Object {
+        objects.push(StorageObject {
             key: key.to_string(),
             name,
             kind: "file",
@@ -108,7 +108,7 @@ pub(crate) async fn fetch_page(
         });
     }
 
-    Ok(R2ObjectPage {
+    Ok(StorageObjectPage {
         objects,
         next_token: output.next_continuation_token().map(ToOwned::to_owned),
     })
@@ -205,9 +205,9 @@ pub(crate) async fn delete_objects(
     client: &Client,
     bucket: &str,
     keys: Vec<String>,
-) -> Result<DeleteR2ObjectsResult, String> {
+) -> Result<DeleteObjectsResult, String> {
     if keys.is_empty() {
-        return Ok(DeleteR2ObjectsResult {
+        return Ok(DeleteObjectsResult {
             deleted_count: 0,
             failed_keys: Vec::new(),
         });
@@ -249,7 +249,7 @@ pub(crate) async fn delete_objects(
         }
     }
 
-    let mut result = DeleteR2ObjectsResult {
+    let mut result = DeleteObjectsResult {
         deleted_count: 0,
         failed_keys: Vec::new(),
     };

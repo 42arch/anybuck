@@ -19,7 +19,7 @@ export function useTransferTasks() {
         const isObjectOperation = ['copy', 'move', 'copy-folder', 'move-folder'].includes(task.operation)
         if ((task.operation === 'upload' && task.status === 'completed')
           || (isObjectOperation && task.parentId === null && ['completed', 'failed', 'cancelled', 'interrupted'].includes(task.status))) {
-          void queryClient.invalidateQueries({ queryKey: ['storage', 'r2', 'objects', task.connectionId] })
+          void queryClient.invalidateQueries({ queryKey: ['storage', 'objects', task.connectionId] })
         }
       }),
       onTransferHistoryCleared(() => setTransferTasks(current => current.filter(task => !terminalStatuses.has(task.status)))),

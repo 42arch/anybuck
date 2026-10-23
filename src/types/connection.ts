@@ -1,8 +1,8 @@
-import type { R2ObjectPage } from '@/types/storage'
+import type { StorageObjectPage } from '@/types/storage'
 
 export type StorageProvider = 'cloudflare-r2' | 'aws-s3' | 'tencent-cos' | 'aliyun-oss'
 
-export interface ConnectR2Request {
+export interface ConnectStorageRequest {
   connectionId?: string
   provider: StorageProvider
   name: string
@@ -16,7 +16,7 @@ export interface ConnectR2Request {
   rememberConnection: boolean
 }
 
-export interface SavedR2Connection {
+export interface SavedStorageConnection {
   id: string
   name: string
   provider: StorageProvider
@@ -26,7 +26,7 @@ export interface SavedR2Connection {
   bucket: string
 }
 
-export interface R2ConnectionResult extends R2ObjectPage {
+export interface StorageConnectionResult extends StorageObjectPage {
   connectionId: string
   provider: StorageProvider
   name: string
@@ -34,8 +34,8 @@ export interface R2ConnectionResult extends R2ObjectPage {
   endpoint: string
 }
 
-export type ActiveR2Connection = Pick<R2ConnectionResult, 'connectionId' | 'provider' | 'bucket' | 'endpoint' | 'name'>
+export type ActiveStorageConnection = Pick<StorageConnectionResult, 'connectionId' | 'provider' | 'bucket' | 'endpoint' | 'name'>
 
-export interface R2ConnectionEntry extends ActiveR2Connection {
+export interface StorageConnectionEntry extends ActiveStorageConnection {
   connected: boolean
 }

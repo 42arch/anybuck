@@ -1,4 +1,4 @@
-export interface DownloadR2ObjectsResult {
+export interface DownloadObjectsResult {
   downloadedCount: number
   failedKeys: string[]
 }

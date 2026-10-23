@@ -16,6 +16,7 @@
 - 页面及其专属组件按视图放在 `src/views/<view>/`。
 - 项目已配置 Tailwind CSS 4 与 shadcn/ui；主题变量在 `src/index.css`，组件配置在 `components.json`。界面优先使用 `src/components/ui/` 的现有组件和 Tailwind 工具类，不新增页面级原生 CSS 文件；按项目配置使用 Base UI 和 Phosphor 图标。
 - 使用 `@phosphor-icons/react` 图标时，统一使用带 `*Icon` 后缀的规范命名（例如 `CloudArrowUpIcon`、`FolderIcon`、`XIcon`），避免使用已被官方废弃的旧版无后缀命名。
+- 组件设计遵循自包含与就近原则，避免层层透传 Props。组件专属的 Mutation/Query、派生计算（如选中判定、路径切分）、表单状态与局部交互反馈（如 Toast、防抖计时器）应尽量封装在组件内部，必要时直接读取全局 Store；父组件仅负责核心业务状态、路由与跨组件调度。
 - 修改现有页面时，可逐步替换模板样式；不要为了无关改动重写整套 UI。
 
 ## 开发与验证

@@ -2,17 +2,31 @@ import type { DownloadPlanSummary, PendingUpload } from '@/types/transfer'
 import { CloudArrowUpIcon } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useFileTransferStore } from '@/store/file-transfer-store'
 
 interface TransferConfirmationDialogsProps {
-  pendingUpload: PendingUpload | null
-  pendingDownload: DownloadPlanSummary | null
-  onCancelUpload: () => void
-  onCancelDownload: () => void
-  onConfirmUpload: () => void
-  onConfirmDownload: (action: 'overwrite' | 'skip') => void
+  pendingUpload?: PendingUpload | null
+  pendingDownload?: DownloadPlanSummary | null
+  onCancelUpload?: () => void
+  onCancelDownload?: () => void
+  onConfirmUpload?: () => void
+  onConfirmDownload?: (action: 'overwrite' | 'skip') => void
 }
 
-export function TransferConfirmationDialogs({ pendingUpload, pendingDownload, onCancelUpload, onCancelDownload, onConfirmUpload, onConfirmDownload }: TransferConfirmationDialogsProps) {
+export function TransferConfirmationDialogs(props?: TransferConfirmationDialogsProps) {
+  const storePendingUpload = useFileTransferStore(state => state.pendingUpload)
+  const storePendingDownload = useFileTransferStore(state => state.pendingDownload)
+  const storeCancelUpload = useFileTransferStore(state => state.cancelUpload)
+  const storeCancelDownload = useFileTransferStore(state => state.cancelDownload)
+  const storeConfirmUpload = useFileTransferStore(state => state.confirmUpload)
+  const storeConfirmDownload = useFileTransferStore(state => state.confirmDownload)
+
+  const pendingUpload = props?.pendingUpload !== undefined ? props.pendingUpload : storePendingUpload
+  const pendingDownload = props?.pendingDownload !== undefined ? props.pendingDownload : storePendingDownload
+  const onCancelUpload = props?.onCancelUpload ?? storeCancelUpload
+  const onCancelDownload = props?.onCancelDownload ?? storeCancelDownload
+  const onConfirmUpload = props?.onConfirmUpload ?? (() => void storeConfirmUpload())
+  const onConfirmDownload = props?.onConfirmDownload ?? (action => void storeConfirmDownload(action))
   return (
     <>
       <Dialog open={Boolean(pendingUpload)} onOpenChange={open => !open && onCancelUpload()}>

@@ -1,6 +1,6 @@
 import { ArrowsOutIcon } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
-import { previewR2Text } from '@/api/objects'
+import { previewText } from '@/api/objects'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
@@ -38,7 +38,7 @@ export function TextPreview({ connectionId, objectKey, name, sizeBytes, mode = '
 
     let active = true
     const timer = window.setTimeout(() => {
-      void previewR2Text(connectionId, objectKey)
+      void previewText(connectionId, objectKey)
         .then((bytes) => {
           if (!active)
             return

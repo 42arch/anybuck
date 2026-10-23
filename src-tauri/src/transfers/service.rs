@@ -1,4 +1,4 @@
-use crate::connection::manager::{R2ConnectionState, client_for_connection};
+use crate::connection::manager::{StorageConnectionState, client_for_connection};
 use crate::storage::s3::copy;
 use crate::transfers::manager::TransferManager;
 use crate::transfers::model::{
@@ -19,12 +19,12 @@ pub(crate) fn list_transfer_tasks(
         .map_err(|_| "传输状态不可用。".to_string())
 }
 
-pub(crate) async fn enqueue_r2_uploads(
+pub(crate) async fn enqueue_uploads(
     app: AppHandle,
     connection_id: String,
     prefix: String,
     local_paths: Vec<String>,
-    connections: State<'_, R2ConnectionState>,
+    connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
 ) -> Result<Vec<TransferTask>, String> {
     if local_paths.is_empty() {
@@ -78,13 +78,13 @@ pub(crate) async fn enqueue_r2_uploads(
     Ok(tasks)
 }
 
-pub(crate) async fn enqueue_r2_object_operation(
+pub(crate) async fn enqueue_object_operation(
     app: AppHandle,
     connection_id: String,
     keys: Vec<String>,
     destination_prefix: String,
     operation: String,
-    connections: State<'_, R2ConnectionState>,
+    connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
 ) -> Result<Vec<TransferTask>, String> {
     if !matches!(operation.as_str(), "copy" | "move") {
@@ -176,11 +176,11 @@ pub(crate) async fn enqueue_r2_object_operation(
     Ok(created)
 }
 
-pub(crate) fn enqueue_r2_download(
+pub(crate) fn enqueue_download(
     app: AppHandle,
     plan_id: String,
     conflict_action: String,
-    connections: State<'_, R2ConnectionState>,
+    connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
 ) -> Result<Vec<TransferTask>, String> {
     if !matches!(conflict_action.as_str(), "overwrite" | "skip") {
@@ -321,7 +321,7 @@ pub(crate) fn cancel_transfer_task(
 pub(crate) fn retry_transfer_task(
     app: AppHandle,
     task_id: String,
-    connections: State<'_, R2ConnectionState>,
+    connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
 ) -> Result<TransferTask, String> {
     let original = manager

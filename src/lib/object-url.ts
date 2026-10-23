@@ -1,6 +1,6 @@
-import type { ActiveR2Connection } from '@/types/connection'
+import type { ActiveStorageConnection } from '@/types/connection'
 
-type ObjectUrlConnection = Pick<ActiveR2Connection, 'provider' | 'bucket' | 'endpoint'>
+type ObjectUrlConnection = Pick<ActiveStorageConnection, 'provider' | 'bucket' | 'endpoint'>
 
 export function getObjectUrl(connection: ObjectUrlConnection, key: string): string {
   const encodedKey = key.split('/').map(segment => encodeURIComponent(segment)).join('/')

@@ -1,8 +1,6 @@
-import type { R2ConnectionEntry, StorageProvider } from '@/types/connection'
+import type { StorageConnectionEntry, StorageProvider } from '@/types/connection'
 import type { View } from '@/types/view'
 import {
-  CaretDownIcon,
-  CaretRightIcon,
   ClockCounterClockwiseIcon,
   CloudArrowUpIcon,
   CloudIcon,
@@ -13,6 +11,7 @@ import {
   SpinnerIcon,
 } from '@phosphor-icons/react'
 import { useState } from 'react'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import {
   Sidebar,
@@ -34,7 +33,7 @@ import {
 
 interface AppSidebarProps {
   view: View
-  connections: R2ConnectionEntry[]
+  connections: StorageConnectionEntry[]
   connectingConnectionIds: ReadonlySet<string>
   activeConnectionId: string
   onViewChange: (view: View) => void
@@ -47,7 +46,12 @@ interface AppSidebarProps {
 
 export function AppSidebar({ view, connections, connectingConnectionIds, activeConnectionId, onViewChange, onConnectionChange, onManageConnection, onConnectConnection, onDisconnectConnection, onAddConnection }: AppSidebarProps) {
   const { setOpenMobile } = useSidebar()
-  const [connectionsExpanded, setConnectionsExpanded] = useState<Record<StorageProvider, boolean>>({ 'cloudflare-r2': true, 'aws-s3': true, 'tencent-cos': true, 'aliyun-oss': true })
+  const [expandedProviders, setExpandedProviders] = useState<StorageProvider[]>([
+    'cloudflare-r2',
+    'aws-s3',
+    'tencent-cos',
+    'aliyun-oss',
+  ])
   const [selectedConnectionId, setSelectedConnectionId] = useState(activeConnectionId)
   const providerGroups: { id: StorageProvider, label: string }[] = [
     { id: 'cloudflare-r2', label: 'Cloudflare R2' },
@@ -68,13 +72,13 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
     setOpenMobile(false)
   }
 
-  function selectConnectionItem(item: R2ConnectionEntry) {
+  function selectConnectionItem(item: StorageConnectionEntry) {
     setSelectedConnectionId(item.connectionId)
     selectConnection(item.connectionId)
   }
 
   function openConnectionDialog(provider: StorageProvider = 'cloudflare-r2') {
-    setConnectionsExpanded(expanded => ({ ...expanded, [provider]: true }))
+    setExpandedProviders(expanded => (expanded.includes(provider) ? expanded : [...expanded, provider]))
     setOpenMobile(false)
     onAddConnection(provider)
   }
@@ -130,20 +134,27 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
           <SidebarGroupAction aria-label="添加连接" title="添加连接" onClick={() => openConnectionDialog()}>
             <PlusIcon />
           </SidebarGroupAction>
-          <SidebarGroupContent>
-            <SidebarMenu>
+          <SidebarGroupContent className='pl-2'>
+            <Accordion
+              multiple
+              value={expandedProviders}
+              onValueChange={val => setExpandedProviders(val as StorageProvider[])}
+              className="flex w-full flex-col gap-px border-none"
+            >
               {visibleProviderGroups.map(group => (
-                <SidebarMenuItem key={group.id}>
-                  <SidebarMenuButton
-                    aria-expanded={connectionsExpanded[group.id]}
-                    onClick={() => setConnectionsExpanded(expanded => ({ ...expanded, [group.id]: !expanded[group.id] }))}
-                  >
-                    <CloudIcon />
-                    <span>{group.label}</span>
-                    {connectionsExpanded[group.id] ? <CaretDownIcon className="ml-auto" /> : <CaretRightIcon className="ml-auto" />}
-                  </SidebarMenuButton>
-                  {connectionsExpanded[group.id] && (
-                    <SidebarMenuSub>
+                <AccordionItem
+                  key={group.id}
+                  value={group.id}
+                  className="border-none not-last:border-b-0 data-open:bg-transparent"
+                >
+                  <AccordionTrigger className="h-8 cursor-pointer items-center gap-2 rounded-md font-normal text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline">
+                    <div className="flex min-w-0 items-center gap-2 truncate">
+                      <CloudIcon className="size-4 shrink-0" />
+                      <span className="truncate">{group.label}</span>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-1">
+                    <SidebarMenuSub className="mx-0 ml-1.5">
                       {connections.filter(item => item.provider === group.id).map(item => (
                         <SidebarMenuSubItem key={item.connectionId}>
                           <ContextMenu>
@@ -165,22 +176,22 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                               {connectingConnectionIds.has(item.connectionId)
                                 ? <SpinnerIcon className="size-3.5 shrink-0 animate-spin text-primary" role="status" aria-label="正在连接" />
                                 : (
-                                    <span
-                                      role="status"
-                                      aria-label={item.connected ? '已连接' : '已断开'}
-                                      title={item.connected ? '已连接' : '已断开'}
-                                      className={`size-2 shrink-0 rounded-full ${item.connected ? 'bg-emerald-500' : 'bg-muted-foreground/50'}`}
-                                    />
-                                  )}
+                                  <span
+                                    role="status"
+                                    aria-label={item.connected ? '已连接' : '已断开'}
+                                    title={item.connected ? '已连接' : '已断开'}
+                                    className={`size-2 shrink-0 rounded-full ${item.connected ? 'bg-emerald-500' : 'bg-muted-foreground/50'}`}
+                                  />
+                                )}
                             </ContextMenuTrigger>
                             <ContextMenuContent>
                               {item.connected
                                 ? (
-                                    <>
-                                      <ContextMenuItem onClick={() => selectConnection(item.connectionId)}>切换到此连接</ContextMenuItem>
-                                      <ContextMenuItem onClick={() => onDisconnectConnection(item.connectionId)}>断开连接</ContextMenuItem>
-                                    </>
-                                  )
+                                  <>
+                                    <ContextMenuItem onClick={() => selectConnection(item.connectionId)}>切换到此连接</ContextMenuItem>
+                                    <ContextMenuItem onClick={() => onDisconnectConnection(item.connectionId)}>断开连接</ContextMenuItem>
+                                  </>
+                                )
                                 : <ContextMenuItem onClick={() => onConnectConnection(item.connectionId)}>连接</ContextMenuItem>}
                               <ContextMenuItem onClick={() => manageConnection(item.connectionId)}>查看连接管理</ContextMenuItem>
                             </ContextMenuContent>
@@ -188,10 +199,10 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                         </SidebarMenuSubItem>
                       ))}
                     </SidebarMenuSub>
-                  )}
-                </SidebarMenuItem>
+                  </AccordionContent>
+                </AccordionItem>
               ))}
-            </SidebarMenu>
+            </Accordion>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>

@@ -1,8 +1,8 @@
 use crate::connection::model::{
-    ConnectR2Request, R2ConnectionResult, SavedR2Connection, StorageProvider,
+    ConnectStorageRequest, SavedStorageConnection, StorageConnectionResult, StorageProvider,
 };
 use crate::connection::{aws, cos, oss, r2};
-use crate::storage::s3::objects::{R2ObjectPage, fetch_page};
+use crate::storage::s3::objects::{StorageObjectPage, fetch_page};
 use aws_sdk_s3::Client;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -13,11 +13,11 @@ static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) struct PreparedConnection {
     pub(crate) client: Client,
-    pub(crate) profile: SavedR2Connection,
+    pub(crate) profile: SavedStorageConnection,
 }
 
 pub(crate) async fn prepare_connection(
-    request: &ConnectR2Request,
+    request: &ConnectStorageRequest,
 ) -> Result<PreparedConnection, String> {
     match request.provider {
         StorageProvider::CloudflareR2 => r2::prepare_connection(request).await,
@@ -43,17 +43,18 @@ pub(crate) fn new_connection_id(provider: StorageProvider) -> String {
 }
 
 #[derive(Default)]
-pub struct R2ConnectionState {
-    pub(crate) connections: Mutex<HashMap<String, ConnectedR2>>,
+pub struct StorageConnectionState {
+    pub(crate) connections: Mutex<HashMap<String, ConnectedStorage>>,
 }
 
-pub(crate) struct ConnectedR2 {
+pub(crate) struct ConnectedStorage {
     pub(crate) client: Client,
     pub(crate) bucket: String,
 }
+
 pub(crate) fn client_for_connection(
     connection_id: &str,
-    state: &R2ConnectionState,
+    state: &StorageConnectionState,
 ) -> Result<(Client, String), String> {
     let connections = state
         .connections
@@ -65,19 +66,19 @@ pub(crate) fn client_for_connection(
     Ok((connection.client.clone(), connection.bucket.clone()))
 }
 pub(crate) async fn connect_runtime(
-    request: ConnectR2Request,
-    state: &R2ConnectionState,
-) -> Result<R2ConnectionResult, String> {
+    request: ConnectStorageRequest,
+    state: &StorageConnectionState,
+) -> Result<StorageConnectionResult, String> {
     let prepared = prepare_connection(&request).await?;
     let page = fetch_page(&prepared.client, &prepared.profile.bucket, "", None).await?;
     register_connection(state, prepared, page)
 }
 
 pub(crate) fn register_connection(
-    state: &R2ConnectionState,
+    state: &StorageConnectionState,
     prepared: PreparedConnection,
-    page: R2ObjectPage,
-) -> Result<R2ConnectionResult, String> {
+    page: StorageObjectPage,
+) -> Result<StorageConnectionResult, String> {
     let connection_id = prepared.profile.id.clone();
     let mut connections = state
         .connections
@@ -85,13 +86,13 @@ pub(crate) fn register_connection(
         .map_err(|_| "存储连接状态不可用，请重启应用后重试。".to_string())?;
     connections.insert(
         connection_id.clone(),
-        ConnectedR2 {
+        ConnectedStorage {
             client: prepared.client,
             bucket: prepared.profile.bucket.clone(),
         },
     );
 
-    Ok(R2ConnectionResult {
+    Ok(StorageConnectionResult {
         connection_id,
         provider: prepared.profile.provider,
         name: prepared.profile.name,

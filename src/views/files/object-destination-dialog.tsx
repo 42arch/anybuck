@@ -1,28 +1,48 @@
 import type { StorageItem } from '@/types/storage'
 import { ArrowLeftIcon, FolderIcon, HouseIcon, SpinnerGapIcon } from '@phosphor-icons/react'
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
-import { listR2Objects } from '@/api/objects'
+import { listObjects } from '@/api/objects'
+import { enqueueObjectOperation } from '@/api/transfers'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
+import { showNotice } from '@/lib/notice'
 
 interface ObjectDestinationDialogProps {
   connectionId: string
   items: StorageItem[]
   currentPath: string
   operation: 'move' | 'copy'
-  isPending: boolean
   onOpenChange: (open: boolean) => void
-  onConfirm: (items: StorageItem[], destinationPrefix: string) => Promise<boolean>
+  onSuccess?: () => void
 }
 
-export function ObjectDestinationDialog({ connectionId, items, currentPath, operation, isPending, onOpenChange, onConfirm }: ObjectDestinationDialogProps) {
+export function ObjectDestinationDialog({
+  connectionId,
+  items,
+  currentPath,
+  operation,
+  onOpenChange,
+  onSuccess,
+}: ObjectDestinationDialogProps) {
   const [destination, setDestination] = useState(currentPath)
   const action = operation === 'move' ? '移动' : '复制'
+
+  const operationMutation = useMutation({
+    mutationFn: ({ connectionId, keys, destinationPrefix, operation }: {
+      connectionId: string
+      keys: string[]
+      destinationPrefix: string
+      operation: 'move' | 'copy'
+    }) => enqueueObjectOperation(connectionId, keys, destinationPrefix, operation),
+  })
+
+  const isPending = operationMutation.isPending
+
   const directoriesQuery = useInfiniteQuery({
-    queryKey: ['storage', 'r2', 'objects', connectionId, destination],
-    queryFn: ({ pageParam }) => listR2Objects(connectionId, destination, pageParam),
+    queryKey: ['storage', 'objects', connectionId, destination],
+    queryFn: ({ pageParam }) => listObjects(connectionId, destination, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: page => page.nextToken ?? undefined,
   })
@@ -32,6 +52,24 @@ export function ObjectDestinationDialog({ connectionId, items, currentPath, oper
     const target = `${destination ? `${destination}/` : ''}${item.name}${item.kind === 'folder' ? '/' : ''}`
     return target === item.id || (item.kind === 'folder' && target.startsWith(item.id))
   })
+
+  async function handleSubmit() {
+    if (!connectionId || items.length === 0)
+      return
+    try {
+      await operationMutation.mutateAsync({
+        connectionId,
+        keys: items.map(item => item.id),
+        destinationPrefix: destination,
+        operation,
+      })
+      onSuccess?.()
+      onOpenChange(false)
+    }
+    catch (cause) {
+      showNotice(`${action}失败：${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+  }
 
   return (
     <Dialog open onOpenChange={open => !isPending && onOpenChange(open)}>
@@ -98,10 +136,7 @@ export function ObjectDestinationDialog({ connectionId, items, currentPath, oper
           <Button variant="outline" disabled={isPending} onClick={() => onOpenChange(false)}>取消</Button>
           <Button
             disabled={isPending || invalidDestination || directoriesQuery.isPending || directoriesQuery.isError}
-            onClick={async () => {
-              if (await onConfirm(items, destination))
-                onOpenChange(false)
-            }}
+            onClick={() => void handleSubmit()}
           >
             {isPending && <Spinner data-icon="inline-start" />}
             {isPending ? `正在${action}…` : `${action}到此处`}

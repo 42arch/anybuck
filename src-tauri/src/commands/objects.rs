@@ -1,33 +1,33 @@
-use crate::connection::manager::{R2ConnectionState, client_for_connection};
-use crate::storage::s3::objects::{self, DeleteR2ObjectsResult, R2ObjectPage};
+use crate::connection::manager::{StorageConnectionState, client_for_connection};
+use crate::storage::s3::objects::{self, DeleteObjectsResult, StorageObjectPage};
 use tauri::{State, ipc::Response};
 
 #[tauri::command]
-pub async fn list_r2_objects(
+pub async fn list_objects(
     connection_id: String,
     prefix: String,
     continuation_token: Option<String>,
-    state: State<'_, R2ConnectionState>,
-) -> Result<R2ObjectPage, String> {
+    state: State<'_, StorageConnectionState>,
+) -> Result<StorageObjectPage, String> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     objects::fetch_page(&client, &bucket, &prefix, continuation_token.as_deref()).await
 }
 
 #[tauri::command]
-pub async fn count_r2_objects(
+pub async fn count_objects(
     connection_id: String,
     prefix: String,
-    state: State<'_, R2ConnectionState>,
+    state: State<'_, StorageConnectionState>,
 ) -> Result<usize, String> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     objects::count_objects(&client, &bucket, &prefix).await
 }
 
 #[tauri::command]
-pub async fn preview_r2_image(
+pub async fn preview_image(
     connection_id: String,
     key: String,
-    state: State<'_, R2ConnectionState>,
+    state: State<'_, StorageConnectionState>,
 ) -> Result<Response, String> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     let bytes = objects::fetch_object_preview(&client, &bucket, &key, 8 * 1024 * 1024).await?;
@@ -35,10 +35,10 @@ pub async fn preview_r2_image(
 }
 
 #[tauri::command]
-pub async fn preview_r2_text(
+pub async fn preview_text(
     connection_id: String,
     key: String,
-    state: State<'_, R2ConnectionState>,
+    state: State<'_, StorageConnectionState>,
 ) -> Result<Response, String> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     let bytes = objects::fetch_object_preview(&client, &bucket, &key, 1024 * 1024).await?;
@@ -46,21 +46,21 @@ pub async fn preview_r2_text(
 }
 
 #[tauri::command]
-pub async fn delete_r2_objects(
+pub async fn delete_objects(
     connection_id: String,
     keys: Vec<String>,
-    state: State<'_, R2ConnectionState>,
-) -> Result<DeleteR2ObjectsResult, String> {
+    state: State<'_, StorageConnectionState>,
+) -> Result<DeleteObjectsResult, String> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     objects::delete_objects(&client, &bucket, keys).await
 }
 
 #[tauri::command]
-pub async fn create_r2_folder(
+pub async fn create_folder(
     connection_id: String,
     prefix: String,
     name: String,
-    state: State<'_, R2ConnectionState>,
+    state: State<'_, StorageConnectionState>,
 ) -> Result<(), String> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     objects::create_folder(&client, &bucket, prefix, name).await

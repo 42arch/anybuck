@@ -1,4 +1,4 @@
-use crate::connection::manager::{R2ConnectionState, client_for_connection};
+use crate::connection::manager::{StorageConnectionState, client_for_connection};
 use crate::transfers::manager::TransferManager;
 use crate::transfers::model::{DownloadPlanSummary, TransferTask, make_id, new_task};
 use std::{
@@ -23,13 +23,13 @@ pub(crate) struct DownloadPlan {
     pub(crate) files: Vec<PlannedDownload>,
     pub(crate) parents: Vec<TransferTask>,
 }
-pub(crate) async fn prepare_r2_download(
+pub(crate) async fn prepare_download(
     app: AppHandle,
     connection_id: String,
     prefix: String,
     keys: Vec<String>,
     destination_path: String,
-    connections: State<'_, R2ConnectionState>,
+    connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
 ) -> Result<DownloadPlanSummary, String> {
     if keys.is_empty() {

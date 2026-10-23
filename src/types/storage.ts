@@ -1,6 +1,6 @@
 export type FileKind = 'folder' | 'image' | 'document' | 'archive' | 'file'
 
-export interface R2Object {
+export interface StorageObject {
   key: string
   name: string
   kind: 'directory' | 'file'
@@ -9,12 +9,12 @@ export interface R2Object {
   etag: string | null
 }
 
-export interface R2ObjectPage {
-  objects: R2Object[]
+export interface StorageObjectPage {
+  objects: StorageObject[]
   nextToken: string | null
 }
 
-export interface DeleteR2ObjectsResult {
+export interface DeleteObjectsResult {
   deletedCount: number
   failedKeys: string[]
 }

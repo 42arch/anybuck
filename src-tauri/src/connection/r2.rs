@@ -1,9 +1,9 @@
 use crate::connection::manager::{PreparedConnection, new_connection_id};
-use crate::connection::model::{ConnectR2Request, SavedR2Connection, StorageProvider};
+use crate::connection::model::{ConnectStorageRequest, SavedStorageConnection, StorageProvider};
 use aws_sdk_s3::{Client, config::Credentials};
 
 pub(crate) async fn prepare_connection(
-    request: &ConnectR2Request,
+    request: &ConnectStorageRequest,
 ) -> Result<PreparedConnection, String> {
     let account_id = request.account_id.trim();
     let bucket = request.bucket.trim();
@@ -56,7 +56,7 @@ pub(crate) async fn prepare_connection(
 
     Ok(PreparedConnection {
         client: Client::new(&shared_config),
-        profile: SavedR2Connection {
+        profile: SavedStorageConnection {
             id: request
                 .connection_id
                 .clone()

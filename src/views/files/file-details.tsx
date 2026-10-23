@@ -1,4 +1,4 @@
-import type { ActiveR2Connection } from '@/types/connection'
+import type { ActiveStorageConnection } from '@/types/connection'
 import type { StorageItem } from '@/types/storage'
 import { CheckIcon, CopyIcon, DownloadSimpleIcon, FoldersIcon } from '@phosphor-icons/react'
 import { useQuery } from '@tanstack/react-query'
@@ -8,23 +8,25 @@ import { FileBadge } from '@/components/files/file-icon'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
+import { showNotice } from '@/lib/notice'
 import { getObjectUrl, getPublicObjectUrl } from '@/lib/object-url'
+import { useFileTransferStore } from '@/store/file-transfer-store'
 import { useSettingsStore } from '@/store/settings-store'
 
 interface FileDetailsProps {
   item: StorageItem
-  connection: ActiveR2Connection | null
+  connection: ActiveStorageConnection | null
   path: string
   onClose: () => void
-  onCopyUrl: (url: string) => Promise<boolean>
   onOpenFolder: (item: StorageItem) => void
-  onDownload: (items: StorageItem[]) => void
-  isDownloading?: boolean
 }
 
-export function FileDetails({ item, connection, path, onClose, onCopyUrl, onOpenFolder, onDownload, isDownloading = false }: FileDetailsProps) {
+export function FileDetails({ item, connection, path, onClose, onOpenFolder }: FileDetailsProps) {
   const [copiedLink, setCopiedLink] = useState<'public' | 'object' | null>(null)
-  const copyFeedbackTimer = useRef<number | undefined>(undefined)
+  const copyFeedbackTimerRef = useRef<number | undefined>(undefined)
+  const downloadItems = useFileTransferStore(state => state.downloadItems)
+  const pendingDownload = useFileTransferStore(state => state.pendingDownload)
+  const isDownloading = Boolean(pendingDownload)
   const publicBaseUrl = useSettingsStore(state => connection ? state.publicBaseUrls[connection.connectionId] : undefined)
   const candidatePublicUrl = item.kind !== 'folder' && connection
     ? getPublicObjectUrl(connection, item.id, publicBaseUrl)
@@ -37,15 +39,21 @@ export function FileDetails({ item, connection, path, onClose, onCopyUrl, onOpen
     staleTime: 60_000,
   })
 
-  useEffect(() => () => window.clearTimeout(copyFeedbackTimer.current), [])
+  useEffect(() => () => window.clearTimeout(copyFeedbackTimerRef.current), [])
 
   async function copyLink(url: string, link: 'public' | 'object') {
-    if (!await onCopyUrl(url))
+    try {
+      await navigator.clipboard.writeText(url)
+      showNotice('对象链接已复制。')
+    }
+    catch {
+      showNotice('复制失败，请检查剪贴板权限。')
       return
+    }
 
-    window.clearTimeout(copyFeedbackTimer.current)
+    window.clearTimeout(copyFeedbackTimerRef.current)
     setCopiedLink(link)
-    copyFeedbackTimer.current = window.setTimeout(() => setCopiedLink(null), 1400)
+    copyFeedbackTimerRef.current = window.setTimeout(setCopiedLink, 1400, null)
   }
 
   const key = `${path ? `${path}/` : ''}${item.name}`
@@ -170,7 +178,7 @@ export function FileDetails({ item, connection, path, onClose, onCopyUrl, onOpen
                 </Button>
               )
             : (
-                <Button disabled={isDownloading} onClick={() => onDownload([item])}>
+                <Button disabled={isDownloading} onClick={() => void downloadItems(path, [item])}>
                   <DownloadSimpleIcon data-icon="inline-start" />
                   下载
                 </Button>
