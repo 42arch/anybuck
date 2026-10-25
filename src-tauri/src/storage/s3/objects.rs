@@ -114,10 +114,65 @@ pub(crate) async fn fetch_page(
     })
 }
 
+fn matches_search(name: &str, search: &str) -> bool {
+    name.to_lowercase().contains(search)
+}
+
+pub(crate) async fn search_page(
+    client: &Client,
+    bucket: &str,
+    prefix: &str,
+    continuation_token: Option<&str>,
+    search: &str,
+) -> Result<StorageObjectPage, String> {
+    let search = search.trim().to_lowercase();
+    if search.is_empty() {
+        return fetch_page(client, bucket, prefix, continuation_token).await;
+    }
+
+    let mut objects = Vec::new();
+    let mut token = continuation_token.map(ToOwned::to_owned);
+    loop {
+        let page = fetch_page(client, bucket, prefix, token.as_deref()).await?;
+        objects.extend(
+            page.objects
+                .into_iter()
+                .filter(|object| matches_search(&object.name, &search)),
+        );
+        token = page.next_token;
+        if objects.len() >= PAGE_SIZE as usize {
+            // A raw S3 page may contain no matches. Look ahead so the UI never
+            // offers a next search page that would be empty.
+            while let Some(next_token) = token.as_deref() {
+                let next_page = fetch_page(client, bucket, prefix, Some(next_token)).await?;
+                if next_page
+                    .objects
+                    .iter()
+                    .any(|object| matches_search(&object.name, &search))
+                {
+                    break;
+                }
+                token = next_page.next_token;
+            }
+            return Ok(StorageObjectPage {
+                objects,
+                next_token: token,
+            });
+        }
+        if token.is_none() {
+            return Ok(StorageObjectPage {
+                objects,
+                next_token: None,
+            });
+        }
+    }
+}
+
 pub(crate) async fn count_objects(
     client: &Client,
     bucket: &str,
     prefix: &str,
+    search: Option<&str>,
 ) -> Result<usize, String> {
     let normalized_prefix = if prefix.is_empty() {
         String::new()
@@ -126,6 +181,7 @@ pub(crate) async fn count_objects(
     };
     let mut total = 0usize;
     let mut continuation_token: Option<String> = None;
+    let search = search.unwrap_or_default().trim().to_lowercase();
 
     loop {
         let mut request = client
@@ -142,14 +198,30 @@ pub(crate) async fn count_objects(
             .send()
             .await
             .map_err(|error| format_storage_error(&error))?;
-        total += output.common_prefixes().len();
+        total += output
+            .common_prefixes()
+            .iter()
+            .filter(|folder| {
+                folder.prefix().is_some_and(|key| {
+                    matches_search(
+                        key.trim_end_matches('/')
+                            .rsplit('/')
+                            .next()
+                            .unwrap_or_default(),
+                        &search,
+                    )
+                })
+            })
+            .count();
         total += output
             .contents()
             .iter()
             .filter(|object| {
-                object
-                    .key()
-                    .is_some_and(|key| key != normalized_prefix.as_str() && !key.ends_with('/'))
+                object.key().is_some_and(|key| {
+                    key != normalized_prefix.as_str()
+                        && !key.ends_with('/')
+                        && matches_search(key.rsplit('/').next().unwrap_or_default(), &search)
+                })
             })
             .count();
 

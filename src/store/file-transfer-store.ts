@@ -1,5 +1,5 @@
 import type { ActiveStorageConnection } from '@/types/connection'
-import type { DownloadPlanSummary, PendingUpload } from '@/types/transfer'
+import type { DownloadPlanSummary, PendingUpload, UploadConflictAction } from '@/types/transfer'
 import { open } from '@tauri-apps/plugin-dialog'
 import { create } from 'zustand'
 import { enqueueDownload, enqueueUploads, prepareDownload } from '@/api/transfers'
@@ -11,10 +11,12 @@ export interface FileTransferState {
   pendingUpload: PendingUpload | null
   pendingDownload: DownloadPlanSummary | null
   isSelectingFiles: boolean
+  isEnqueuingUpload: boolean
 
   stageUpload: (prefix: string, paths: string[]) => void
   uploadFiles: (prefix?: string) => Promise<void>
-  confirmUpload: () => Promise<void>
+  uploadFolders: (prefix?: string) => Promise<void>
+  confirmUpload: (conflictAction: UploadConflictAction) => Promise<void>
   cancelUpload: () => void
   downloadItems: (prefix: string, items: { id: string, name: string }[]) => Promise<void>
   confirmDownload: (conflictAction: 'overwrite' | 'skip') => Promise<void>
@@ -30,6 +32,7 @@ export const useFileTransferStore = create<FileTransferState>((set, get) => ({
   pendingUpload: null,
   pendingDownload: null,
   isSelectingFiles: false,
+  isEnqueuingUpload: false,
 
   stageUpload: (prefix: string, paths: string[]) => {
     const { pendingUpload, isSelectingFiles } = get()
@@ -76,23 +79,61 @@ export const useFileTransferStore = create<FileTransferState>((set, get) => ({
     stageUpload(prefix, paths)
   },
 
-  confirmUpload: async () => {
-    const { pendingUpload } = get()
-    if (!pendingUpload)
+  uploadFolders: async (prefix = '') => {
+    const { pendingUpload, isSelectingFiles, stageUpload } = get()
+    if (pendingUpload || isSelectingFiles)
+      return
+
+    if (!getActiveConnection()) {
+      showNotice('请先添加并连接存储桶。')
+      return
+    }
+
+    let selection: string | string[] | null
+    set({ isSelectingFiles: true })
+    try {
+      selection = await open({ multiple: true, directory: true, title: '选择要上传的文件夹' })
+    }
+    catch (cause) {
+      showNotice(`无法打开文件夹选择器：${cause instanceof Error ? cause.message : String(cause)}`)
+      return
+    }
+    finally {
+      set({ isSelectingFiles: false })
+    }
+
+    const paths = selection ? Array.isArray(selection) ? selection : [selection] : []
+    if (paths.length > 0)
+      stageUpload(prefix, paths)
+  },
+
+  confirmUpload: async (conflictAction) => {
+    const { pendingUpload, isEnqueuingUpload } = get()
+    if (!pendingUpload || isEnqueuingUpload)
       return
 
     const { connectionId, prefix, paths } = pendingUpload
-    set({ pendingUpload: null })
+    set({ isEnqueuingUpload: true })
     try {
-      const tasks = await enqueueUploads(connectionId, prefix, paths)
-      showNotice(`已加入 ${tasks.length} 个上传任务。`)
+      const tasks = await enqueueUploads(connectionId, prefix, paths, conflictAction)
+      set({ pendingUpload: null })
+      const fileCount = tasks.filter(task => task.operation === 'upload').length
+      const emptyFolderCount = tasks.filter(task => task.operation === 'upload-marker').length
+      showNotice(`已加入 ${fileCount} 个文件${emptyFolderCount > 0 ? `和 ${emptyFolderCount} 个空文件夹` : ''}上传任务。`)
     }
     catch (cause) {
+      set({ pendingUpload: null })
       showNotice(`无法加入上传任务：${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+    finally {
+      set({ isEnqueuingUpload: false })
     }
   },
 
-  cancelUpload: () => set({ pendingUpload: null }),
+  cancelUpload: () => {
+    if (!get().isEnqueuingUpload)
+      set({ pendingUpload: null })
+  },
 
   downloadItems: async (prefix: string, items: { id: string, name: string }[]) => {
     const { pendingUpload, pendingDownload, isSelectingFiles } = get()

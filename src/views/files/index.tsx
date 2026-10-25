@@ -24,7 +24,7 @@ import { ObjectDestinationDialog } from './object-destination-dialog'
 
 const emptyObjects: StorageObject[] = []
 const objectsPageSize = 100
-const objectsQueryKey = (connectionId: string | undefined, prefix: string) => ['storage', 'objects', connectionId ?? null, prefix] as const
+const objectsQueryKey = (connectionId: string | undefined, prefix: string, search = '') => ['storage', 'objects', connectionId ?? null, prefix, search] as const
 
 export function FilesView() {
   const { connection, selectedConnection, selectionVersion, isRestoring } = useStorageConnection()
@@ -34,11 +34,12 @@ export function FilesView() {
 
   const [path, setPath] = useState('')
   const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState<string[]>([])
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [selectedItemsById, setSelectedItemsById] = useState<Record<string, StorageItem>>({})
   const [focused, setFocused] = useState<string | null>(null)
   const [grid, setGrid] = useState(false)
   const [displayMode, setDisplayMode] = useState<'pagination' | 'infinite'>('pagination')
-  const pageScope = `${connection?.connectionId ?? ''}:${path}`
+  const pageScope = JSON.stringify([connection?.connectionId ?? '', path, debouncedSearch])
   const [pageState, setPageState] = useState({ scope: pageScope, index: 0 })
   const pageIndex = pageState.scope === pageScope ? pageState.index : 0
   const setPageIndex = (next: number | ((current: number) => number)) => {
@@ -65,16 +66,25 @@ export function FilesView() {
   })
 
   useEffect(() => {
+    const nextSearch = search.trim()
+    if (nextSearch === debouncedSearch)
+      return
+    const timer = window.setTimeout(setDebouncedSearch, 300, nextSearch)
+    return () => window.clearTimeout(timer)
+  }, [search, debouncedSearch])
+
+  useEffect(() => {
     setPath('')
     setSearch('')
-    setSelected([])
+    setDebouncedSearch('')
+    setSelectedItemsById({})
     setFocused(null)
     setDeleteTargets([])
     setDestinationAction(null)
     setPreviewItem(null)
     setDetailsItem(null)
     setCreateFolderOpen(false)
-    setPageState({ scope: `${connection?.connectionId ?? ''}:`, index: 0 })
+    setPageState({ scope: JSON.stringify([connection?.connectionId ?? '', '', '']), index: 0 })
   }, [connection?.connectionId, selectionVersion])
 
   const connectionId = connection?.connectionId
@@ -83,15 +93,15 @@ export function FilesView() {
 
   const queryClient = useQueryClient()
   const objectsQuery = useInfiniteQuery({
-    queryKey: objectsQueryKey(connectionId, path),
-    queryFn: ({ pageParam }) => listObjects(connectionId!, path, pageParam),
+    queryKey: objectsQueryKey(connectionId, path, debouncedSearch),
+    queryFn: ({ pageParam }) => listObjects(connectionId!, path, pageParam, debouncedSearch),
     initialPageParam: null as string | null,
     getNextPageParam: lastPage => lastPage.nextToken ?? undefined,
     enabled: Boolean(connectionId),
   })
   const countQuery = useQuery({
-    queryKey: [...objectsQueryKey(connectionId, path), 'count'],
-    queryFn: () => countObjects(connectionId!, path),
+    queryKey: [...objectsQueryKey(connectionId, path, debouncedSearch), 'count'],
+    queryFn: () => countObjects(connectionId!, path, debouncedSearch),
     enabled: Boolean(connectionId),
   })
 
@@ -100,13 +110,14 @@ export function FilesView() {
     ? objects
     : objectsQuery.data?.pages[pageIndex]?.objects ?? emptyObjects
   const loadError = objectsQuery.error instanceof Error ? objectsQuery.error.message : ''
+  const isSearchPending = search.trim() !== debouncedSearch
 
   const directoryItems = useMemo(() => connection ? toStorageItems(objects) : [], [connection, objects])
   const pageDirectoryItems = useMemo(() => connection ? toStorageItems(pageObjects) : [], [connection, pageObjects])
   const visibleItems = useMemo(() => {
-    const query = search.trim().toLowerCase()
+    if (isSearchPending)
+      return []
     return pageDirectoryItems
-      .filter(item => item.name.toLowerCase().includes(query))
       .sort((a, b) => {
         if (a.kind === 'folder' && b.kind !== 'folder')
           return -1
@@ -114,28 +125,30 @@ export function FilesView() {
           return 1
         return sortAscending ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
       })
-  }, [pageDirectoryItems, search, sortAscending])
+  }, [pageDirectoryItems, isSearchPending, sortAscending])
 
   const focusedItem = directoryItems.find(item => item.id === focused)
-  const selectedItems = directoryItems.filter(item => selected.includes(item.id))
+  const selectedItems = Object.values(selectedItemsById)
+  const selected = Object.keys(selectedItemsById)
 
   const pageCount = countQuery.data === undefined ? undefined : Math.max(1, Math.ceil(countQuery.data / objectsPageSize))
   const canGoToNextPage = Boolean(objectsQuery.hasNextPage) || pageIndex + 1 < (objectsQuery.data?.pages.length ?? 0)
   const currentPage = pageIndex + 1
-  const isLoading = objectsQuery.isFetching || isRestoring
-  const isLoadingPage = objectsQuery.isFetchingNextPage
+  const isLoading = objectsQuery.isFetching || isRestoring || isSearchPending
+  const isLoadingPage = objectsQuery.isFetchingNextPage || isSearchPending
   const hasNextPage = Boolean(objectsQuery.hasNextPage)
   const loadedCount = objects.length
   const totalCount = countQuery.data
-  const isCounting = countQuery.isFetching
+  const isCounting = countQuery.isFetching || isSearchPending
   const countError = countQuery.error instanceof Error ? countQuery.error.message : ''
 
   function navigateTo(nextPath: string) {
     setPath(nextPath)
     setPageIndex(0)
-    setSelected([])
+    setSelectedItemsById({})
     setFocused(null)
     setSearch('')
+    setDebouncedSearch('')
   }
 
   function openFolder(item: StorageItem) {
@@ -143,8 +156,28 @@ export function FilesView() {
       navigateTo(item.path)
   }
 
-  function toggleSelected(id: string) {
-    setSelected(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id])
+  function toggleSelected(item: StorageItem) {
+    setSelectedItemsById((current) => {
+      const next = { ...current }
+      if (next[item.id])
+        delete next[item.id]
+      else
+        next[item.id] = item
+      return next
+    })
+  }
+
+  function toggleSelectVisible() {
+    setSelectedItemsById((current) => {
+      const next = { ...current }
+      if (visibleItems.every(item => current[item.id])) {
+        visibleItems.forEach(item => delete next[item.id])
+      }
+      else {
+        visibleItems.forEach(item => next[item.id] = item)
+      }
+      return next
+    })
   }
 
   function unavailableAction(label: string) {
@@ -153,7 +186,8 @@ export function FilesView() {
 
   function refreshDirectory() {
     setSearch('')
-    setSelected([])
+    setDebouncedSearch('')
+    setSelectedItemsById({})
     setPageIndex(0)
     if (connection) {
       void queryClient.resetQueries({ queryKey: objectsQueryKey(connection.connectionId, path) })
@@ -165,9 +199,13 @@ export function FilesView() {
   function changeSearch(value: string) {
     setSearch(value)
     setPageIndex(0)
+    setSelectedItemsById({})
+    setFocused(null)
   }
 
   async function goToPage(page: number) {
+    if (isSearchPending)
+      return
     const targetIndex = page - 1
     if (targetIndex < 0 || (countQuery.data !== undefined && page > Math.max(1, Math.ceil(countQuery.data / objectsPageSize))))
       return
@@ -193,7 +231,7 @@ export function FilesView() {
   }
 
   const loadNextPage = useCallback(async () => {
-    if (!objectsQuery.hasNextPage || objectsQuery.isFetchingNextPage || loadMoreInFlightRef.current)
+    if (isSearchPending || !objectsQuery.hasNextPage || objectsQuery.isFetchingNextPage || loadMoreInFlightRef.current)
       return
     loadMoreInFlightRef.current = true
     try {
@@ -202,7 +240,7 @@ export function FilesView() {
     finally {
       loadMoreInFlightRef.current = false
     }
-  }, [objectsQuery])
+  }, [objectsQuery, isSearchPending])
 
   useEffect(() => {
     const root = listViewportRef.current
@@ -263,11 +301,11 @@ export function FilesView() {
               }}
               onRefresh={refreshDirectory}
               onGridChange={setGrid}
-              onDownloadSelected={() => void downloadItems(path, visibleItems.filter(item => selected.includes(item.id)))}
+              onDownloadSelected={() => void downloadItems(path, selectedItems)}
               onCopySelected={() => openDestination('copy', selectedItems)}
               onMoveSelected={() => openDestination('move', selectedItems)}
-              onDeleteSelected={() => setDeleteTargets(visibleItems.filter(item => selected.includes(item.id)))}
-              onClearSelection={() => setSelected([])}
+              onDeleteSelected={() => setDeleteTargets(selectedItems)}
+              onClearSelection={() => setSelectedItemsById({})}
             />
 
             <div ref={listViewportRef} className="min-h-0 flex-1 overflow-y-auto">
@@ -308,7 +346,7 @@ export function FilesView() {
                         selected={selected}
                         focusedId={focusedItem?.id}
                         sortAscending={sortAscending}
-                        onSelectAll={() => setSelected(current => visibleItems.length > 0 && visibleItems.every(item => current.includes(item.id)) ? [] : visibleItems.map(item => item.id))}
+                        onSelectAll={toggleSelectVisible}
                         onToggleSelected={toggleSelected}
                         onSortToggle={() => setSortAscending(value => !value)}
                         onFocus={setFocused}
@@ -373,7 +411,7 @@ export function FilesView() {
           connectionId={connectionId}
           onOpenChange={open => !open && setDeleteTargets([])}
           onSuccess={() => {
-            setSelected([])
+            setSelectedItemsById({})
             setFocused(null)
             setPageIndex(0)
             setDeleteTargets([])
@@ -388,7 +426,7 @@ export function FilesView() {
             onOpenChange={open => !open && setDestinationAction(null)}
             onSuccess={() => {
               if (destinationAction.operation === 'move') {
-                setSelected([])
+                setSelectedItemsById({})
                 setFocused(null)
               }
             }}

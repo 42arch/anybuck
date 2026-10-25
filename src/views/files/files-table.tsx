@@ -19,7 +19,7 @@ interface FilesTableProps {
   focusedId?: string | null
   sortAscending: boolean
   onSelectAll: () => void
-  onToggleSelected: (id: string) => void
+  onToggleSelected: (item: StorageItem) => void
   onSortToggle: () => void
   onFocus: (id: string) => void
   onOpenFolder: (item: StorageItem) => void
@@ -55,13 +55,13 @@ export function FilesTable({
         <TableRow className="bg-[#fbfcfd]">
           <TableHead className="sticky top-0 z-10 w-10 bg-[#fbfcfd]">
             <Checkbox
-              aria-label="选择当前目录全部项目"
+              aria-label="选择或取消当前页全部项目"
               checked={allSelected}
               onCheckedChange={onSelectAll}
             />
           </TableHead>
           <TableHead className="sticky top-0 z-10 bg-[#fbfcfd]">
-            <Button variant="ghost" className="px-0" onClick={onSortToggle}>
+            <Button variant="ghost" className="px-0" onClick={onSortToggle} title="按当前页名称排序">
               名称
               <ArrowDownIcon
                 data-icon="inline-end"
@@ -92,7 +92,7 @@ export function FilesTable({
                 <Checkbox
                   aria-label={`选择 ${item.name}`}
                   checked={selected.includes(item.id)}
-                  onCheckedChange={() => onToggleSelected(item.id)}
+                  onCheckedChange={() => onToggleSelected(item)}
                 />
               </TableCell>
               <TableCell>

@@ -15,11 +15,15 @@ export function TransferProgressToast({ tasks }: TransferProgressToastProps) {
     ? '正在上传文件'
     : activeTransfer.operation === 'download'
       ? '正在下载文件'
-      : activeTransfer.operation === 'copy'
-        ? '正在复制对象'
-        : activeTransfer.phase === 'deleting'
-          ? '正在删除源对象'
-          : '正在移动对象'
+      : activeTransfer.phase === 'downloading'
+        ? '正在读取源对象'
+        : activeTransfer.phase === 'uploading'
+          ? '正在上传目标对象'
+          : activeTransfer.phase === 'verifying'
+            ? '正在验证目标对象'
+            : activeTransfer.phase === 'deleting'
+              ? '正在删除源对象'
+              : activeTransfer.operation === 'copy' ? '正在复制对象' : '正在移动对象'
 
   return (
     <div

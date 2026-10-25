@@ -73,6 +73,29 @@ pub(crate) fn save_connection(
     Ok(())
 }
 
+pub(crate) fn rename_saved_connection(
+    app: &AppHandle,
+    connection_id: &str,
+    name: &str,
+) -> Result<SavedStorageConnection, String> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > 100 {
+        return Err("连接名称应为 1–100 个字符。".to_string());
+    }
+    let mut profiles = load_saved_connections(app)?;
+    let profile = profiles
+        .iter_mut()
+        .find(|profile| profile.id == connection_id)
+        .ok_or_else(|| "已保存的连接不存在，请刷新连接列表后重试。".to_string())?;
+    profile.name = name.to_string();
+    let updated = profile.clone();
+    let contents = serde_json::to_vec(&profiles)
+        .map_err(|error| format!("无法序列化存储连接信息：{error}"))?;
+    let path = profile_path(app)?;
+    fs::write(&path, contents).map_err(|error| format!("无法更新已保存的连接信息：{error}"))?;
+    Ok(updated)
+}
+
 pub(crate) fn remove_saved_connection(app: &AppHandle, connection_id: &str) -> Result<(), String> {
     let path = profile_path(app)?;
     let previous_profile = fs::read(&path).ok();

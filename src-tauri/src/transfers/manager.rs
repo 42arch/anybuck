@@ -92,6 +92,36 @@ impl TransferManager {
         Ok(())
     }
 
+    pub(crate) fn add_tasks(
+        &self,
+        app: &AppHandle,
+        new_tasks: &[TransferTask],
+    ) -> Result<(), String> {
+        let persist_guard = self
+            .inner
+            .persist_lock
+            .lock()
+            .map_err(|_| "传输状态不可用。".to_string())?;
+        {
+            let mut tasks = self
+                .inner
+                .tasks
+                .lock()
+                .map_err(|_| "传输状态不可用。".to_string())?;
+            let original_len = tasks.len();
+            tasks.extend_from_slice(new_tasks);
+            if let Err(error) = save_tasks(&self.inner.storage_path, &tasks) {
+                tasks.truncate(original_len);
+                return Err(error);
+            }
+        }
+        drop(persist_guard);
+        for task in new_tasks {
+            self.emit(app, task);
+        }
+        Ok(())
+    }
+
     pub(crate) fn update_task(
         &self,
         app: &AppHandle,
@@ -145,6 +175,15 @@ impl TransferManager {
         }
     }
 
+    pub(crate) fn complete_upload(&self, app: &AppHandle, id: &str, key: String) {
+        if let Ok(mut tasks) = self.inner.tasks.lock()
+            && let Some(task) = tasks.iter_mut().find(|task| task.id == id)
+        {
+            task.object_key = key;
+        }
+        self.update_task(app, id, "completed", None);
+    }
+
     pub(crate) fn update_progress(
         &self,
         app: &AppHandle,
@@ -159,10 +198,12 @@ impl TransferManager {
         {
             let previous_total = task.total_bytes;
             let previous_update = task.updated_at;
+            let previous_transferred = task.transferred_bytes;
             task.total_bytes = total.or(task.total_bytes);
             task.transferred_bytes = transferred.min(task.total_bytes.unwrap_or(u64::MAX));
             let timestamp = now();
             if previous_total != task.total_bytes
+                || task.transferred_bytes < previous_transferred
                 || timestamp.saturating_sub(previous_update) >= 100
                 || task.total_bytes == Some(task.transferred_bytes)
             {

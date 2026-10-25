@@ -4,6 +4,7 @@ import type {
   SavedStorageConnection,
   StorageConnectionEntry,
   StorageConnectionResult,
+  UpdateStorageConnectionRequest,
 } from '@/types/connection'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -12,8 +13,11 @@ import {
   disconnectConnection,
   forgetSavedConnection,
   listSavedConnections,
+  renameSavedConnection,
+  updateSavedConnection,
 } from '@/api/connections'
 import { useConnectionStore } from '@/store/connection-store'
+import { useSettingsStore } from '@/store/settings-store'
 
 const connectionQueryKey = ['storage', 'connections'] as const
 
@@ -24,7 +28,9 @@ export function useStorageConnection() {
   const activeConnectionId = useConnectionStore(state => state.activeConnectionId)
   const selectConnection = useConnectionStore(state => state.selectConnection)
   const rememberSessionConnection = useConnectionStore(state => state.rememberSessionConnection)
+  const renameSessionConnection = useConnectionStore(state => state.renameSessionConnection)
   const removeSessionConnection = useConnectionStore(state => state.removeSessionConnection)
+  const setPublicBaseUrl = useSettingsStore(state => state.setPublicBaseUrl)
 
   const savedConnections = savedQuery.data ?? []
   const savedConnectionIds = new Set(savedConnections.map(profile => profile.id))
@@ -71,6 +77,30 @@ export function useStorageConnection() {
     rememberSessionConnection(toActiveConnection(result))
   }
 
+  async function updateConnection(request: UpdateStorageConnectionRequest) {
+    const previous = savedConnections.find(item => item.id === request.connectionId)
+    const result = await updateSavedConnection(request)
+    const targetChanged = Boolean(previous && (previous.bucket !== result.bucket || previous.endpoint !== result.endpoint))
+    rememberSessionConnection(toActiveConnection(result))
+    selectConnection(result.connectionId)
+    if (targetChanged)
+      setPublicBaseUrl(result.connectionId, '')
+    queryClient.setQueryData<SavedStorageConnection[]>(connectionQueryKey, current =>
+      (current ?? savedConnections).map(item => item.id === result.connectionId
+        ? {
+            ...item,
+            name: result.name,
+            accountId: request.accountId,
+            region: request.region,
+            endpoint: result.endpoint,
+            bucket: result.bucket,
+          }
+        : item))
+    queryClient.removeQueries({ queryKey: ['storage', 'objects', result.connectionId] })
+    void queryClient.invalidateQueries({ queryKey: connectionQueryKey })
+    return targetChanged
+  }
+
   async function disconnect(connectionId: string) {
     await disconnectConnection(connectionId)
     removeSessionConnection(connectionId)
@@ -81,6 +111,23 @@ export function useStorageConnection() {
     removeSessionConnection(connectionId)
     queryClient.setQueryData<SavedStorageConnection[]>(connectionQueryKey, current => (current ?? savedConnections).filter(item => item.id !== connectionId))
     void queryClient.invalidateQueries({ queryKey: connectionQueryKey })
+  }
+
+  async function renameConnection(connectionId: string, name: string) {
+    const trimmedName = name.trim()
+    if (!trimmedName || [...trimmedName].length > 100)
+      throw new Error('连接名称应为 1–100 个字符。')
+
+    if (savedConnectionIds.has(connectionId)) {
+      const updated = await renameSavedConnection(connectionId, trimmedName)
+      queryClient.setQueryData<SavedStorageConnection[]>(connectionQueryKey, current =>
+        (current ?? savedConnections).map(item => item.id === connectionId ? updated : item))
+      void queryClient.invalidateQueries({ queryKey: connectionQueryKey })
+    }
+    else if (!sessionConnections.some(item => item.connectionId === connectionId)) {
+      throw new Error('连接不存在，请刷新连接列表后重试。')
+    }
+    renameSessionConnection(connectionId, trimmedName)
   }
 
   return {
@@ -94,8 +141,10 @@ export function useStorageConnection() {
     selectConnection,
     connect,
     connectSavedConnection: connectSaved,
+    updateConnection,
     disconnectConnection: disconnect,
     forgetSavedConnection: forgetConnection,
+    renameConnection,
   }
 }
 

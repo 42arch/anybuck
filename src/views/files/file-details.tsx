@@ -6,10 +6,10 @@ import { useEffect, useRef, useState } from 'react'
 import { probePublicObjectUrl } from '@/api/public-access'
 import { FileBadge } from '@/components/files/file-icon'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { showNotice } from '@/lib/notice'
-import { getObjectUrl, getPublicObjectUrl } from '@/lib/object-url'
+import { getAuthenticatedBrowserUrl, getObjectUrl, getPublicObjectUrl } from '@/lib/object-url'
 import { useFileTransferStore } from '@/store/file-transfer-store'
 import { useSettingsStore } from '@/store/settings-store'
 
@@ -22,7 +22,7 @@ interface FileDetailsProps {
 }
 
 export function FileDetails({ item, connection, path, onClose, onOpenFolder }: FileDetailsProps) {
-  const [copiedLink, setCopiedLink] = useState<'public' | 'object' | null>(null)
+  const [copiedLink, setCopiedLink] = useState<'public' | 'object' | 'browser' | null>(null)
   const copyFeedbackTimerRef = useRef<number | undefined>(undefined)
   const downloadItems = useFileTransferStore(state => state.downloadItems)
   const pendingDownload = useFileTransferStore(state => state.pendingDownload)
@@ -41,7 +41,7 @@ export function FileDetails({ item, connection, path, onClose, onOpenFolder }: F
 
   useEffect(() => () => window.clearTimeout(copyFeedbackTimerRef.current), [])
 
-  async function copyLink(url: string, link: 'public' | 'object') {
+  async function copyLink(url: string, link: 'public' | 'object' | 'browser') {
     try {
       await navigator.clipboard.writeText(url)
       showNotice('对象链接已复制。')
@@ -58,6 +58,7 @@ export function FileDetails({ item, connection, path, onClose, onOpenFolder }: F
 
   const key = `${path ? `${path}/` : ''}${item.name}`
   const objectUrl = item.kind !== 'folder' && connection ? getObjectUrl(connection, item.id) : null
+  const browserUrl = item.kind !== 'folder' && connection ? getAuthenticatedBrowserUrl(connection, item.id) : null
   const isPublic = publicAccessQuery.data?.accessible === true
   const publicStatus = publicAccessQuery.isFetching
     ? '正在验证匿名访问…'
@@ -75,8 +76,7 @@ export function FileDetails({ item, connection, path, onClose, onOpenFolder }: F
     <Dialog open onOpenChange={open => !open && onClose()}>
       <DialogContent className="flex max-h-[calc(100svh-2rem)] min-h-0 flex-col gap-3 sm:max-w-lg">
         <DialogHeader className="shrink-0">
-          <DialogTitle>文件详情</DialogTitle>
-          <DialogDescription>{item.kind === 'folder' ? '文件夹信息' : '文件信息与访问链接'}</DialogDescription>
+          <DialogTitle>{item.kind === 'folder' ? '文件夹详情' : '文件详情'}</DialogTitle>
         </DialogHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
           <div className="flex min-w-0 items-center gap-3 py-1">
@@ -104,9 +104,30 @@ export function FileDetails({ item, connection, path, onClose, onOpenFolder }: F
               <dt className="text-muted-foreground">对象 Key</dt>
               <dd className="break-all rounded-md bg-muted p-2 font-mono text-xs">{key}</dd>
             </div>
+            {browserUrl && (
+              <div className="flex flex-col gap-1">
+                <dt className="text-muted-foreground">Google 登录访问链接</dt>
+                <dd className="flex flex-col gap-1.5">
+                  <div className="group/link relative min-w-0 rounded-md bg-muted p-2 pr-10 font-mono text-xs">
+                    <span className="block break-all">{browserUrl}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="pointer-events-none absolute top-1 right-1 opacity-0 transition-opacity group-hover/link:pointer-events-auto group-hover/link:opacity-100 group-focus-within/link:pointer-events-auto group-focus-within/link:opacity-100"
+                      aria-label={copiedLink === 'browser' ? '已复制登录访问链接' : '复制登录访问链接'}
+                      title={copiedLink === 'browser' ? '已复制' : '复制登录访问链接'}
+                      onClick={() => void copyLink(browserUrl, 'browser')}
+                    >
+                      {copiedLink === 'browser' ? <CheckIcon /> : <CopyIcon />}
+                    </Button>
+                  </div>
+                  <span className="text-muted-foreground">需要登录有该对象读取权限的 Google 账号；此链接不能用于匿名分享。</span>
+                </dd>
+              </div>
+            )}
             {candidatePublicUrl && (
               <div className="flex flex-col gap-1">
-                <dt className="text-muted-foreground">{isPublic ? '公开文件链接' : '域名链接'}</dt>
+                <dt className="text-muted-foreground">{isPublic ? '公开文件链接' : connection?.provider === 'google-cloud-storage' ? '匿名访问链接（尚未验证公开）' : '域名链接'}</dt>
                 <dd className="flex flex-col gap-1.5">
                   <div className="group/link relative min-w-0 rounded-md bg-muted p-2 pr-10 font-mono text-xs">
                     <span className="block break-all">{candidatePublicUrl}</span>
@@ -121,14 +142,18 @@ export function FileDetails({ item, connection, path, onClose, onOpenFolder }: F
                       {copiedLink === 'public' ? <CheckIcon /> : <CopyIcon />}
                     </Button>
                   </div>
-                  <span className="text-muted-foreground">{publicStatus}</span>
+                  <span className="text-muted-foreground">
+                    {connection?.provider === 'google-cloud-storage' && publicAccessQuery.data?.statusCode === 403
+                      ? 'HTTP 403：匿名访问被拒绝。Google 登录访问链接可用并不代表对象已公开；请检查 Bucket 的公开访问阻止策略及 allUsers 权限。'
+                      : publicStatus}
+                  </span>
                   <Button variant="outline" size="sm" className="self-start" disabled={publicAccessQuery.isFetching} onClick={() => void publicAccessQuery.refetch()}>
                     重新检查
                   </Button>
                 </dd>
               </div>
             )}
-            {item.kind !== 'folder' && connection?.provider === 'cloudflare-r2' && !candidatePublicUrl && (
+            {item.kind !== 'folder' && (connection?.provider === 'cloudflare-r2' || connection?.provider === 'qiniu-kodo') && !candidatePublicUrl && (
               <div className="flex flex-col gap-1">
                 <dt className="text-muted-foreground">公开文件链接</dt>
                 <dd className="break-all text-muted-foreground">
@@ -158,11 +183,15 @@ export function FileDetails({ item, connection, path, onClose, onOpenFolder }: F
                   <span className="text-muted-foreground">
                     {connection?.provider === 'cloudflare-r2'
                       ? '这是 R2 S3 API 地址，直接访问需要签名；公开访问需配置公开域名。'
-                      : connection?.provider === 'aws-s3'
-                        ? '私有对象需要签名链接才能访问；公开读取取决于该 S3 Bucket 和对象的访问权限。'
-                        : connection?.provider === 'aliyun-oss'
-                          ? '私有对象需要签名链接才能访问；公开读取取决于该 OSS Bucket 和对象的访问权限。'
-                          : '私有对象需要签名链接才能访问；部分 COS Bucket 的默认域名不支持浏览器预览。'}
+                      : connection?.provider === 'qiniu-kodo'
+                        ? '这是七牛 S3 API 地址，直接访问需要签名；公开访问需配置空间绑定域名。'
+                        : connection?.provider === 'aws-s3'
+                          ? '私有对象需要签名链接才能访问；公开读取取决于该 S3 Bucket 和对象的访问权限。'
+                          : connection?.provider === 'aliyun-oss'
+                            ? '私有对象需要签名链接才能访问；公开读取取决于该 OSS Bucket 和对象的访问权限。'
+                            : connection?.provider === 'google-cloud-storage'
+                              ? '私有对象需要签名链接才能访问；公开读取取决于该 GCS Bucket 和对象的访问权限。'
+                              : '私有对象需要签名链接才能访问；部分 COS Bucket 的默认域名不支持浏览器预览。'}
                   </span>
                 </dd>
               </div>

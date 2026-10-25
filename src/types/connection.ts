@@ -1,6 +1,6 @@
 import type { StorageObjectPage } from '@/types/storage'
 
-export type StorageProvider = 'cloudflare-r2' | 'aws-s3' | 'tencent-cos' | 'aliyun-oss'
+export type StorageProvider = 'cloudflare-r2' | 'aws-s3' | 'tencent-cos' | 'aliyun-oss' | 'google-cloud-storage' | 'qiniu-kodo' | 'volcengine-tos'
 
 export interface ConnectStorageRequest {
   connectionId?: string
@@ -24,6 +24,20 @@ export interface SavedStorageConnection {
   accountId: string
   endpoint: string
   bucket: string
+}
+
+export interface UpdateStorageConnectionRequest {
+  connectionId: string
+  name: string
+  accountId: string
+  region: string
+  endpoint?: string
+  bucket: string
+  credentials?: {
+    accessKeyId: string
+    secretAccessKey: string
+    sessionToken: string
+  }
 }
 
 export interface StorageConnectionResult extends StorageObjectPage {

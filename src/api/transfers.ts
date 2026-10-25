@@ -1,4 +1,4 @@
-import type { DownloadObjectsResult, DownloadPlanSummary, TransferTask } from '@/types/transfer'
+import type { DownloadObjectsResult, DownloadPlanSummary, TransferTask, UploadConflictAction } from '@/types/transfer'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
@@ -27,12 +27,12 @@ export function onTransferHistoryCleared(callback: () => void) {
   return listen('transfer-history-cleared', callback)
 }
 
-export function enqueueUploads(connectionId: string, prefix: string, localPaths: string[]) {
-  return invoke<TransferTask[]>('enqueue_uploads', { connectionId, prefix, localPaths })
+export function enqueueUploads(connectionId: string, prefix: string, localPaths: string[], uploadConflictAction: UploadConflictAction) {
+  return invoke<TransferTask[]>('enqueue_uploads', { connectionId, prefix, localPaths, uploadConflictAction })
 }
 
-export function enqueueObjectOperation(connectionId: string, keys: string[], destinationPrefix: string, operation: 'copy' | 'move') {
-  return invoke<TransferTask[]>('enqueue_object_operation', { connectionId, keys, destinationPrefix, operation })
+export function enqueueObjectOperation(connectionId: string, destinationConnectionId: string, keys: string[], destinationPrefix: string, operation: 'copy' | 'move') {
+  return invoke<TransferTask[]>('enqueue_object_operation', { connectionId, destinationConnectionId, keys, destinationPrefix, operation })
 }
 
 export function prepareDownload(connectionId: string, prefix: string, keys: string[], destinationPath: string) {

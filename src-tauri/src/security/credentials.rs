@@ -5,6 +5,9 @@ const R2_KEYRING_SERVICE: &str = "com.cloudstore.r2";
 const AWS_KEYRING_SERVICE: &str = "com.cloudstore.aws-s3";
 const COS_KEYRING_SERVICE: &str = "com.cloudstore.cos";
 const OSS_KEYRING_SERVICE: &str = "com.cloudstore.oss";
+const GCS_KEYRING_SERVICE: &str = "com.cloudstore.gcs";
+const KODO_KEYRING_SERVICE: &str = "com.cloudstore.kodo";
+const TOS_KEYRING_SERVICE: &str = "com.cloudstore.tos";
 
 pub(crate) fn read_saved_credentials(
     provider: StorageProvider,
@@ -30,6 +33,9 @@ fn keyring_service(provider: StorageProvider) -> &'static str {
         StorageProvider::AwsS3 => AWS_KEYRING_SERVICE,
         StorageProvider::TencentCos => COS_KEYRING_SERVICE,
         StorageProvider::AliyunOss => OSS_KEYRING_SERVICE,
+        StorageProvider::GoogleCloudStorage => GCS_KEYRING_SERVICE,
+        StorageProvider::QiniuKodo => KODO_KEYRING_SERVICE,
+        StorageProvider::VolcengineTos => TOS_KEYRING_SERVICE,
     }
 }
 pub(crate) fn restore_previous_secret(entry: &Entry, previous_secret: Option<&str>) {
@@ -49,8 +55,8 @@ pub(crate) fn keyring_error(error: keyring::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        AWS_KEYRING_SERVICE, COS_KEYRING_SERVICE, OSS_KEYRING_SERVICE, R2_KEYRING_SERVICE,
-        keyring_service,
+        AWS_KEYRING_SERVICE, COS_KEYRING_SERVICE, GCS_KEYRING_SERVICE, KODO_KEYRING_SERVICE,
+        OSS_KEYRING_SERVICE, R2_KEYRING_SERVICE, TOS_KEYRING_SERVICE, keyring_service,
     };
     use crate::connection::model::StorageProvider;
 
@@ -68,6 +74,18 @@ mod tests {
         assert_eq!(
             keyring_service(StorageProvider::AliyunOss),
             OSS_KEYRING_SERVICE
+        );
+        assert_eq!(
+            keyring_service(StorageProvider::GoogleCloudStorage),
+            GCS_KEYRING_SERVICE
+        );
+        assert_eq!(
+            keyring_service(StorageProvider::QiniuKodo),
+            KODO_KEYRING_SERVICE
+        );
+        assert_eq!(
+            keyring_service(StorageProvider::VolcengineTos),
+            TOS_KEYRING_SERVICE
         );
     }
 }

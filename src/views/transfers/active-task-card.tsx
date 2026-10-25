@@ -23,7 +23,7 @@ export interface ActiveTaskCardProps {
 }
 
 export function ActiveTaskCard({ task, childrenTasks = [], onNotice }: ActiveTaskCardProps) {
-  const isParent = ['folder', 'copy-folder', 'move-folder'].includes(task.operation)
+  const isParent = ['folder', 'upload-folder', 'copy-folder', 'move-folder'].includes(task.operation)
   const isCopy = task.operation === 'copy' || task.operation === 'copy-folder'
   const isMove = task.operation === 'move' || task.operation === 'move-folder'
   const canCancel = ['queued', 'running'].includes(task.status)
@@ -32,7 +32,13 @@ export function ActiveTaskCard({ task, childrenTasks = [], onNotice }: ActiveTas
   const percent = taskPercent(task)
   const processedChildren = childrenTasks.filter(child => terminalStatuses.has(child.status)).length
   const phaseLabel = task.status === 'running' && (isCopy || isMove)
-    ? task.phase === 'deleting' ? '正在删除源对象' : '正在复制'
+    ? task.phase === 'deleting'
+      ? '正在删除源对象'
+      : task.phase === 'downloading'
+        ? '正在读取源对象'
+        : task.phase === 'uploading'
+          ? '正在上传目标对象'
+          : task.phase === 'verifying' ? '正在验证目标对象' : '正在复制'
     : statusLabels[task.status]
 
   async function handleAction(action: () => Promise<unknown>, success: string) {
@@ -68,14 +74,14 @@ export function ActiveTaskCard({ task, childrenTasks = [], onNotice }: ActiveTas
         </div>
         <span
           className="truncate text-xs text-muted-foreground"
-          title={task.operation === 'download' ? task.localPath : `${task.bucket}/${task.objectKey}`}
+          title={task.operation === 'download' ? task.localPath : `${task.connectionId}:${task.bucket}/${task.objectKey}${task.destinationKey ? ` → ${task.destinationConnectionId || task.connectionId}:${task.destinationBucket || task.bucket}/${task.destinationKey}` : ''}`}
         >
           {formatTaskTarget(task)}
         </span>
         {isParent && childrenTasks.length > 0 && (
           <div className="flex flex-col gap-1">
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{`${processedChildren} / ${childrenTasks.length} 个${isCopy || isMove ? '对象' : '文件'}已处理`}</span>
+              <span>{`${processedChildren} / ${childrenTasks.length} 个${isCopy || isMove ? '对象' : task.operation === 'upload-folder' ? '项目' : '文件'}已处理`}</span>
               <span>{`${Math.round(processedChildren / childrenTasks.length * 100)}%`}</span>
             </div>
             <Progress value={processedChildren / childrenTasks.length * 100} aria-label={`${task.displayName} 任务进度`} />

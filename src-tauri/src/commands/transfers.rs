@@ -5,7 +5,7 @@ use crate::transfers::planner;
 use crate::transfers::service;
 use crate::transfers::{
     manager::TransferManager,
-    model::{DownloadPlanSummary, TransferTask},
+    model::{DownloadPlanSummary, TransferTask, UploadConflictAction},
 };
 use std::{path::Path, sync::Arc};
 use tauri::{AppHandle, State};
@@ -23,9 +23,11 @@ pub async fn upload_file(
         &bucket,
         &prefix,
         Path::new(&local_path),
+        UploadConflictAction::Skip,
         Arc::new(|_, _| {}),
     )
     .await
+    .map(|_| ())
 }
 
 #[tauri::command]
@@ -51,6 +53,7 @@ pub async fn enqueue_uploads(
     connection_id: String,
     prefix: String,
     local_paths: Vec<String>,
+    upload_conflict_action: UploadConflictAction,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
 ) -> Result<Vec<TransferTask>, String> {
@@ -59,16 +62,19 @@ pub async fn enqueue_uploads(
         connection_id,
         prefix,
         local_paths,
+        upload_conflict_action,
         connections,
         manager,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn enqueue_object_operation(
     app: AppHandle,
     connection_id: String,
+    destination_connection_id: Option<String>,
     keys: Vec<String>,
     destination_prefix: String,
     operation: String,
@@ -78,6 +84,7 @@ pub async fn enqueue_object_operation(
     service::enqueue_object_operation(
         app,
         connection_id,
+        destination_connection_id,
         keys,
         destination_prefix,
         operation,

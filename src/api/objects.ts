@@ -1,16 +1,17 @@
 import type { DeleteObjectsResult, StorageObjectPage } from '@/types/storage'
 import { invoke } from '@tauri-apps/api/core'
 
-export function listObjects(connectionId: string, prefix: string, continuationToken?: string | null) {
+export function listObjects(connectionId: string, prefix: string, continuationToken?: string | null, search?: string) {
   return invoke<StorageObjectPage>('list_objects', {
     connectionId,
     prefix,
     continuationToken: continuationToken ?? null,
+    search: search ?? null,
   })
 }
 
-export function countObjects(connectionId: string, prefix: string) {
-  return invoke<number>('count_objects', { connectionId, prefix })
+export function countObjects(connectionId: string, prefix: string, search?: string) {
+  return invoke<number>('count_objects', { connectionId, prefix, search: search ?? null })
 }
 
 export function previewImage(connectionId: string, key: string) {

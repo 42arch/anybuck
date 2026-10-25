@@ -1,4 +1,4 @@
-import type { ConnectStorageRequest, SavedStorageConnection, StorageConnectionResult } from '@/types/connection'
+import type { ConnectStorageRequest, SavedStorageConnection, StorageConnectionResult, UpdateStorageConnectionRequest } from '@/types/connection'
 import { invoke } from '@tauri-apps/api/core'
 
 export function connectStorage(request: ConnectStorageRequest) {
@@ -9,8 +9,16 @@ export function listSavedConnections() {
   return invoke<SavedStorageConnection[]>('list_saved_connections')
 }
 
+export function renameSavedConnection(connectionId: string, name: string) {
+  return invoke<SavedStorageConnection>('rename_connection', { connectionId, name })
+}
+
 export function connectSavedConnection(connectionId: string) {
   return invoke<StorageConnectionResult>('connect_saved_connection', { connectionId })
+}
+
+export function updateSavedConnection(request: UpdateStorageConnectionRequest) {
+  return invoke<StorageConnectionResult>('update_saved_connection', { request })
 }
 
 export function disconnectConnection(connectionId: string) {

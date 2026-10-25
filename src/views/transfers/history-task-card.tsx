@@ -20,7 +20,7 @@ export interface HistoryTaskCardProps {
 }
 
 function getHistoryMetrics(task: TransferTask, childrenTasks: TransferTask[]) {
-  const isParent = ['folder', 'copy-folder', 'move-folder'].includes(task.operation)
+  const isParent = ['folder', 'upload-folder', 'copy-folder', 'move-folder'].includes(task.operation)
   const isCopy = task.operation === 'copy' || task.operation === 'copy-folder'
   const isMove = task.operation === 'move' || task.operation === 'move-folder'
   const percent = taskPercent(task)
@@ -36,7 +36,7 @@ function getHistoryMetrics(task: TransferTask, childrenTasks: TransferTask[]) {
     if (task.totalBytes !== null && task.totalBytes > 0)
       sizeText = formatBytes(task.totalBytes, 1)
     else
-      sizeText = `${processedChildren}/${childrenTasks.length} 个${isCopy || isMove ? '对象' : '文件'}`
+      sizeText = `${processedChildren}/${childrenTasks.length} 个${isCopy || isMove ? '对象' : task.operation === 'upload-folder' ? '项目' : '文件'}`
   }
   else {
     if (task.status === 'completed') {
@@ -66,7 +66,7 @@ function getHistoryMetrics(task: TransferTask, childrenTasks: TransferTask[]) {
 }
 
 export function HistoryTaskCard({ task, childrenTasks = [], onNotice }: HistoryTaskCardProps) {
-  const isParent = ['folder', 'copy-folder', 'move-folder'].includes(task.operation)
+  const isParent = ['folder', 'upload-folder', 'copy-folder', 'move-folder'].includes(task.operation)
   const isCopy = task.operation === 'copy' || task.operation === 'copy-folder'
   const isMove = task.operation === 'move' || task.operation === 'move-folder'
   const retryable = ['failed', 'cancelled', 'interrupted'].includes(task.status)
@@ -120,7 +120,7 @@ export function HistoryTaskCard({ task, childrenTasks = [], onNotice }: HistoryT
         </div>
         <span
           className="truncate text-xs text-muted-foreground"
-          title={task.operation === 'download' ? task.localPath : `${task.bucket}/${task.objectKey}`}
+          title={task.operation === 'download' ? task.localPath : `${task.connectionId}:${task.bucket}/${task.objectKey}${task.destinationKey ? ` → ${task.destinationConnectionId || task.connectionId}:${task.destinationBucket || task.bucket}/${task.destinationKey}` : ''}`}
         >
           {formatTaskTarget(task)}
         </span>

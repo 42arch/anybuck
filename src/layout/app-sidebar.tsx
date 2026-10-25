@@ -11,6 +11,7 @@ import {
   SpinnerIcon,
 } from '@phosphor-icons/react'
 import { useState } from 'react'
+import { RenameConnectionDialog } from '@/components/connection/rename-connection-dialog'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import {
@@ -51,13 +52,20 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
     'aws-s3',
     'tencent-cos',
     'aliyun-oss',
+    'google-cloud-storage',
+    'qiniu-kodo',
+    'volcengine-tos',
   ])
   const [selectedConnectionId, setSelectedConnectionId] = useState(activeConnectionId)
+  const [renamingConnection, setRenamingConnection] = useState<StorageConnectionEntry | null>(null)
   const providerGroups: { id: StorageProvider, label: string }[] = [
     { id: 'cloudflare-r2', label: 'Cloudflare R2' },
     { id: 'aws-s3', label: 'AWS S3' },
     { id: 'tencent-cos', label: '腾讯云 COS' },
     { id: 'aliyun-oss', label: '阿里云 OSS' },
+    { id: 'google-cloud-storage', label: 'Google Cloud Storage' },
+    { id: 'qiniu-kodo', label: '七牛云 Kodo' },
+    { id: 'volcengine-tos', label: '火山引擎 TOS' },
   ]
   const visibleProviderGroups = providerGroups.filter(group => connections.some(item => item.provider === group.id))
 
@@ -106,7 +114,7 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
         <SidebarGroup>
           <SidebarGroupLabel className="text-[#78879a]">工作台</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-1">
               <SidebarMenuItem>
                 <SidebarMenuButton className="data-active:[&>svg]:text-[#ff965f]" isActive={view === 'files'} onClick={() => selectView('files')}>
                   <FoldersIcon />
@@ -134,7 +142,7 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
           <SidebarGroupAction aria-label="添加连接" title="添加连接" onClick={() => openConnectionDialog()}>
             <PlusIcon />
           </SidebarGroupAction>
-          <SidebarGroupContent className='pl-2'>
+          <SidebarGroupContent className="pl-2">
             <Accordion
               multiple
               value={expandedProviders}
@@ -154,7 +162,7 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="pb-1">
-                    <SidebarMenuSub className="mx-0 ml-1.5">
+                    <SidebarMenuSub className="mx-0 ml-1.5 px-2">
                       {connections.filter(item => item.provider === group.id).map(item => (
                         <SidebarMenuSubItem key={item.connectionId}>
                           <ContextMenu>
@@ -176,23 +184,24 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                               {connectingConnectionIds.has(item.connectionId)
                                 ? <SpinnerIcon className="size-3.5 shrink-0 animate-spin text-primary" role="status" aria-label="正在连接" />
                                 : (
-                                  <span
-                                    role="status"
-                                    aria-label={item.connected ? '已连接' : '已断开'}
-                                    title={item.connected ? '已连接' : '已断开'}
-                                    className={`size-2 shrink-0 rounded-full ${item.connected ? 'bg-emerald-500' : 'bg-muted-foreground/50'}`}
-                                  />
-                                )}
+                                    <span
+                                      role="status"
+                                      aria-label={item.connected ? '已连接' : '已断开'}
+                                      title={item.connected ? '已连接' : '已断开'}
+                                      className={`size-2 shrink-0 rounded-full ${item.connected ? 'bg-emerald-500' : 'bg-muted-foreground/50'}`}
+                                    />
+                                  )}
                             </ContextMenuTrigger>
                             <ContextMenuContent>
                               {item.connected
                                 ? (
-                                  <>
-                                    <ContextMenuItem onClick={() => selectConnection(item.connectionId)}>切换到此连接</ContextMenuItem>
-                                    <ContextMenuItem onClick={() => onDisconnectConnection(item.connectionId)}>断开连接</ContextMenuItem>
-                                  </>
-                                )
+                                    <>
+                                      <ContextMenuItem onClick={() => selectConnection(item.connectionId)}>切换到此连接</ContextMenuItem>
+                                      <ContextMenuItem onClick={() => onDisconnectConnection(item.connectionId)}>断开连接</ContextMenuItem>
+                                    </>
+                                  )
                                 : <ContextMenuItem onClick={() => onConnectConnection(item.connectionId)}>连接</ContextMenuItem>}
+                              <ContextMenuItem onClick={() => setRenamingConnection(item)}>重命名</ContextMenuItem>
                               <ContextMenuItem onClick={() => manageConnection(item.connectionId)}>查看连接管理</ContextMenuItem>
                             </ContextMenuContent>
                           </ContextMenu>
@@ -217,6 +226,13 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+      {renamingConnection && (
+        <RenameConnectionDialog
+          key={renamingConnection.connectionId}
+          connection={renamingConnection}
+          onClose={() => setRenamingConnection(null)}
+        />
+      )}
     </Sidebar>
   )
 }

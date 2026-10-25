@@ -21,11 +21,13 @@ export function taskPercent(task: TransferTask): number | null {
 }
 
 export function formatTaskTarget(task: TransferTask): string {
-  if (task.operation === 'upload')
+  if (task.operation === 'upload' || task.operation === 'upload-marker' || task.operation === 'upload-folder')
     return `上传到 ${task.bucket}/${task.objectKey}`
   if (task.operation === 'download')
     return `保存到 ${task.localPath}`
   if (task.operation === 'copy' || task.operation === 'move')
-    return `${task.bucket}/${task.objectKey} → ${task.bucket}/${task.destinationKey}`
+    return `${task.destinationConnectionId && task.destinationConnectionId !== task.connectionId ? '跨连接 · ' : ''}${task.bucket}/${task.objectKey} → ${task.destinationBucket || task.bucket}/${task.destinationKey}`
+  if (task.operation === 'copy-folder' || task.operation === 'move-folder')
+    return `${task.destinationConnectionId && task.destinationConnectionId !== task.connectionId ? '跨连接 · ' : ''}${task.bucket}/${task.objectKey} → ${task.destinationBucket || task.bucket}/${task.destinationKey}`
   return `下载 ${task.bucket}/${task.objectKey}`
 }

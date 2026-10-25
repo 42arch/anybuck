@@ -9,6 +9,9 @@ pub enum StorageProvider {
     AwsS3,
     TencentCos,
     AliyunOss,
+    GoogleCloudStorage,
+    QiniuKodo,
+    VolcengineTos,
 }
 
 #[derive(Deserialize)]
@@ -32,7 +35,7 @@ pub struct ConnectStorageRequest {
     pub(crate) remember_connection: bool,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SavedStorageConnection {
     #[serde(default)]
@@ -47,6 +50,18 @@ pub struct SavedStorageConnection {
     pub(crate) account_id: String,
     pub(crate) endpoint: String,
     pub(crate) bucket: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateStorageConnectionRequest {
+    pub(crate) connection_id: String,
+    pub(crate) name: String,
+    pub(crate) account_id: String,
+    pub(crate) region: String,
+    pub(crate) endpoint: Option<String>,
+    pub(crate) bucket: String,
+    pub(crate) credentials: Option<SavedStorageCredentials>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -108,6 +123,31 @@ mod tests {
             serde_json::from_str::<StorageProvider>(&value).unwrap(),
             StorageProvider::AliyunOss
         );
+    }
+
+    #[test]
+    fn gcs_provider_serializes_for_ipc_and_saved_connections() {
+        let value = serde_json::to_string(&StorageProvider::GoogleCloudStorage).unwrap();
+        assert_eq!(value, "\"google-cloud-storage\"");
+        assert_eq!(
+            serde_json::from_str::<StorageProvider>(&value).unwrap(),
+            StorageProvider::GoogleCloudStorage
+        );
+    }
+
+    #[test]
+    fn kodo_and_tos_providers_serialize_for_ipc_and_saved_connections() {
+        for (provider, name) in [
+            (StorageProvider::QiniuKodo, "qiniu-kodo"),
+            (StorageProvider::VolcengineTos, "volcengine-tos"),
+        ] {
+            let value = serde_json::to_string(&provider).unwrap();
+            assert_eq!(value, format!("\"{name}\""));
+            assert_eq!(
+                serde_json::from_str::<StorageProvider>(&value).unwrap(),
+                provider
+            );
+        }
     }
 
     #[test]

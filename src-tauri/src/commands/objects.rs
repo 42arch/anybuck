@@ -7,20 +7,29 @@ pub async fn list_objects(
     connection_id: String,
     prefix: String,
     continuation_token: Option<String>,
+    search: Option<String>,
     state: State<'_, StorageConnectionState>,
 ) -> Result<StorageObjectPage, String> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
-    objects::fetch_page(&client, &bucket, &prefix, continuation_token.as_deref()).await
+    objects::search_page(
+        &client,
+        &bucket,
+        &prefix,
+        continuation_token.as_deref(),
+        search.as_deref().unwrap_or_default(),
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn count_objects(
     connection_id: String,
     prefix: String,
+    search: Option<String>,
     state: State<'_, StorageConnectionState>,
 ) -> Result<usize, String> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
-    objects::count_objects(&client, &bucket, &prefix).await
+    objects::count_objects(&client, &bucket, &prefix, search.as_deref()).await
 }
 
 #[tauri::command]

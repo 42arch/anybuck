@@ -7,6 +7,7 @@ interface ConnectionState {
   selectionVersion: number
   selectConnection: (connectionId: string) => void
   rememberSessionConnection: (connection: ActiveStorageConnection) => void
+  renameSessionConnection: (connectionId: string, name: string) => void
   removeSessionConnection: (connectionId: string) => void
 }
 
@@ -25,6 +26,9 @@ export const useConnectionStore = create<ConnectionState>(set => ({
     ]
     return { sessionConnections, activeConnectionId: connection.connectionId }
   }),
+  renameSessionConnection: (connectionId, name) => set(state => ({
+    sessionConnections: state.sessionConnections.map(item => item.connectionId === connectionId ? { ...item, name } : item),
+  })),
   removeSessionConnection: connectionId => set(state => ({
     sessionConnections: state.sessionConnections.filter(item => item.connectionId !== connectionId),
     activeConnectionId: state.activeConnectionId === connectionId ? null : state.activeConnectionId,

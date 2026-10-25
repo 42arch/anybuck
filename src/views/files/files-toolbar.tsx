@@ -1,6 +1,7 @@
 import {
   ArrowClockwiseIcon,
   DotsThreeIcon,
+  FolderIcon,
   GridFourIcon,
   HouseIcon,
   ListBulletsIcon,
@@ -69,6 +70,7 @@ export function FilesToolbar({
   onClearSelection,
 }: FilesToolbarProps) {
   const uploadFiles = useFileTransferStore(state => state.uploadFiles)
+  const uploadFolders = useFileTransferStore(state => state.uploadFolders)
   const isUploading = useFileTransferStore(state => Boolean(state.isSelectingFiles || state.pendingUpload))
   const isDownloading = useFileTransferStore(state => Boolean(state.pendingDownload))
   const parts = path ? path.split('/') : []
@@ -122,16 +124,25 @@ export function FilesToolbar({
               onChange={event => onSearchChange(event.target.value)}
             />
           </InputGroup>
-          <Tooltip>
-            <TooltipTrigger
-              render={(
-                <Button size="icon-sm" aria-label="上传文件" onClick={() => void uploadFiles(path)} disabled={isUploading}>
-                  <UploadSimpleIcon />
-                </Button>
-              )}
-            />
-            <TooltipContent>上传文件</TooltipContent>
-          </Tooltip>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button size="icon-sm" aria-label="上传文件或文件夹" title="上传文件或文件夹" disabled={isUploading} />}
+            >
+              <UploadSimpleIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuItem onClick={() => void uploadFiles(path)}>
+                  <UploadSimpleIcon data-icon="inline-start" />
+                  选择文件…
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void uploadFolders(path)}>
+                  <FolderIcon data-icon="inline-start" />
+                  选择文件夹…
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Tooltip>
             <TooltipTrigger
               render={(

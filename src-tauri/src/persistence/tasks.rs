@@ -1,5 +1,5 @@
 use crate::storage::s3::copy::CopyCheckpoint;
-use crate::transfers::model::TransferTask;
+use crate::transfers::model::{TransferTask, UploadConflictAction};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
@@ -15,6 +15,10 @@ pub(crate) struct PersistedTask {
     pub(crate) object_key: String,
     #[serde(default)]
     pub(crate) destination_key: String,
+    #[serde(default)]
+    pub(crate) destination_connection_id: String,
+    #[serde(default)]
+    pub(crate) destination_bucket: String,
     pub(crate) local_path: String,
     pub(crate) relative_path: String,
     pub(crate) destination_root: String,
@@ -28,6 +32,8 @@ pub(crate) struct PersistedTask {
     pub(crate) transferred_bytes: u64,
     pub(crate) created_at: u64,
     pub(crate) updated_at: u64,
+    #[serde(default)]
+    pub(crate) upload_conflict_action: UploadConflictAction,
     pub(crate) overwrite: bool,
     #[serde(default)]
     pub(crate) checkpoint: Option<CopyCheckpoint>,
@@ -44,6 +50,8 @@ impl From<&TransferTask> for PersistedTask {
             display_name: task.display_name.clone(),
             object_key: task.object_key.clone(),
             destination_key: task.destination_key.clone(),
+            destination_connection_id: task.destination_connection_id.clone(),
+            destination_bucket: task.destination_bucket.clone(),
             local_path: task.local_path.clone(),
             relative_path: task.relative_path.clone(),
             destination_root: task.destination_root.clone(),
@@ -54,6 +62,7 @@ impl From<&TransferTask> for PersistedTask {
             transferred_bytes: task.transferred_bytes,
             created_at: task.created_at,
             updated_at: task.updated_at,
+            upload_conflict_action: task.upload_conflict_action,
             overwrite: task.overwrite,
             checkpoint: task.checkpoint.clone(),
         }
@@ -78,6 +87,8 @@ pub(crate) fn load_tasks(path: &Path) -> Result<Vec<TransferTask>, String> {
                 display_name: task.display_name,
                 object_key: task.object_key,
                 destination_key: task.destination_key,
+                destination_connection_id: task.destination_connection_id,
+                destination_bucket: task.destination_bucket,
                 local_path: task.local_path,
                 relative_path: task.relative_path,
                 destination_root: task.destination_root,
@@ -88,6 +99,7 @@ pub(crate) fn load_tasks(path: &Path) -> Result<Vec<TransferTask>, String> {
                 transferred_bytes: task.transferred_bytes,
                 created_at: task.created_at,
                 updated_at: task.updated_at,
+                upload_conflict_action: task.upload_conflict_action,
                 overwrite: task.overwrite,
                 checkpoint: task.checkpoint,
             })
@@ -127,6 +139,7 @@ pub(crate) fn save_tasks(path: &Path, tasks: &[TransferTask]) -> Result<(), Stri
 mod tests {
     use super::PersistedTask;
     use crate::storage::s3::copy::CopyCheckpoint;
+    use crate::transfers::model::UploadConflictAction;
 
     #[test]
     fn transfer_history_keeps_move_checkpoint_and_reads_old_records() {
@@ -149,21 +162,33 @@ mod tests {
         });
         let old: PersistedTask = serde_json::from_value(old_record).unwrap();
         assert_eq!(old.destination_key, "");
+        assert_eq!(old.destination_connection_id, "");
+        assert_eq!(old.destination_bucket, "");
         assert!(old.checkpoint.is_none());
+        assert_eq!(old.upload_conflict_action, UploadConflictAction::Skip);
 
         let mut move_task = old;
         move_task.operation = "move".to_string();
         move_task.destination_key = "new/file.txt".to_string();
+        move_task.destination_connection_id = "destination".to_string();
+        move_task.destination_bucket = "destination-bucket".to_string();
         move_task.phase = Some("deleting".to_string());
         move_task.checkpoint = Some(CopyCheckpoint {
             source_etag: "source".to_string(),
             target_etag: "target".to_string(),
             size: 42,
         });
+        move_task.upload_conflict_action = UploadConflictAction::KeepBoth;
         let restored: PersistedTask =
             serde_json::from_slice(&serde_json::to_vec(&move_task).unwrap()).unwrap();
         assert_eq!(restored.destination_key, "new/file.txt");
+        assert_eq!(restored.destination_connection_id, "destination");
+        assert_eq!(restored.destination_bucket, "destination-bucket");
         assert_eq!(restored.phase.as_deref(), Some("deleting"));
+        assert_eq!(
+            restored.upload_conflict_action,
+            UploadConflictAction::KeepBoth
+        );
         assert_eq!(restored.checkpoint.unwrap().target_etag, "target");
     }
 }

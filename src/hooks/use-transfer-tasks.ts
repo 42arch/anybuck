@@ -20,6 +20,8 @@ export function useTransferTasks() {
         if ((task.operation === 'upload' && task.status === 'completed')
           || (isObjectOperation && task.parentId === null && ['completed', 'failed', 'cancelled', 'interrupted'].includes(task.status))) {
           void queryClient.invalidateQueries({ queryKey: ['storage', 'objects', task.connectionId] })
+          if (isObjectOperation && task.destinationConnectionId && task.destinationConnectionId !== task.connectionId)
+            void queryClient.invalidateQueries({ queryKey: ['storage', 'objects', task.destinationConnectionId] })
         }
       }),
       onTransferHistoryCleared(() => setTransferTasks(current => current.filter(task => !terminalStatuses.has(task.status)))),

@@ -39,7 +39,7 @@ export function TransfersView({ tasks, onNotice }: TransfersViewProps) {
 
   function renderTransferTab(operation: 'upload' | 'download' | 'operations') {
     const tabTasks = tasks.filter(task => operation === 'upload'
-      ? task.operation === 'upload'
+      ? ['upload', 'upload-marker', 'upload-folder'].includes(task.operation)
       : operation === 'download'
         ? task.operation === 'download' || task.operation === 'folder'
         : ['copy', 'move', 'copy-folder', 'move-folder'].includes(task.operation))

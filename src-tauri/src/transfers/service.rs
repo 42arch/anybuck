@@ -1,11 +1,14 @@
-use crate::connection::manager::{StorageConnectionState, client_for_connection};
+use crate::connection::manager::{
+    StorageConnectionState, client_for_connection, connections_share_bucket,
+};
 use crate::storage::s3::copy;
 use crate::transfers::manager::TransferManager;
 use crate::transfers::model::{
-    TransferTask, is_folder_operation, is_terminal, make_id, new_task, now,
+    TransferTask, UploadConflictAction, is_folder_operation, is_terminal, make_id, new_task, now,
 };
+use crate::transfers::upload_planner::plan_uploads;
 use crate::transfers::worker::spawn_task;
-use std::{fs, path::PathBuf};
+use std::{collections::HashSet, path::PathBuf};
 use tauri::{AppHandle, Emitter, State};
 
 pub(crate) fn list_transfer_tasks(
@@ -24,6 +27,7 @@ pub(crate) async fn enqueue_uploads(
     connection_id: String,
     prefix: String,
     local_paths: Vec<String>,
+    upload_conflict_action: UploadConflictAction,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
 ) -> Result<Vec<TransferTask>, String> {
@@ -31,56 +35,88 @@ pub(crate) async fn enqueue_uploads(
         return Ok(Vec::new());
     }
     let (client, bucket) = client_for_connection(&connection_id, connections.inner())?;
-    let mut files = Vec::with_capacity(local_paths.len());
-    for local_path in local_paths {
-        let path = PathBuf::from(&local_path);
-        let metadata = fs::metadata(&path).map_err(|error| format!("无法读取所选文件：{error}"))?;
-        if !metadata.is_file() {
-            return Err(format!("所选路径不是文件：{}", path.display()));
+    let roots = tokio::task::spawn_blocking(move || plan_uploads(local_paths, &prefix))
+        .await
+        .map_err(|error| format!("无法扫描所选文件夹：{error}"))??;
+
+    if upload_conflict_action != UploadConflictAction::KeepBoth {
+        let mut names = HashSet::new();
+        if roots
+            .iter()
+            .flat_map(|root| &root.items)
+            .any(|item| !names.insert(&item.key))
+        {
+            return Err("所选项目会上传到相同对象 Key；请分开上传或选择“保留两份”。".to_string());
         }
-        let file_name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .filter(|name| !name.is_empty())
-            .ok_or_else(|| "无法读取所选文件名。".to_string())?;
-        files.push((local_path, file_name.to_string(), metadata.len()));
     }
 
-    let mut tasks = Vec::with_capacity(files.len());
-    for (local_path, file_name, size) in files {
-        let key = if prefix.trim_matches('/').is_empty() {
-            file_name.clone()
+    let mut tasks = Vec::new();
+    let mut workers = Vec::new();
+    for root in roots {
+        let parent_id = if root.is_folder {
+            let mut parent = new_task(
+                None,
+                "upload-folder",
+                &connection_id,
+                &bucket,
+                &root.name,
+                &format!("{}/", root.key),
+                &root.local_path,
+                false,
+            );
+            parent.total_bytes = Some(
+                root.items
+                    .iter()
+                    .filter_map(|item| item.size)
+                    .fold(0u64, u64::saturating_add),
+            );
+            let id = parent.id.clone();
+            tasks.push(parent);
+            Some(id)
         } else {
-            format!("{}/{file_name}", prefix.trim_matches('/'))
+            None
         };
-        let mut task = new_task(
-            None,
-            "upload",
-            &connection_id,
-            &bucket,
-            &file_name,
-            &key,
-            &local_path,
-            true,
-        );
-        task.total_bytes = Some(size);
-        manager.add_task(&app, task.clone())?;
+        for item in root.items {
+            let mut task = new_task(
+                parent_id.clone(),
+                if item.size.is_some() {
+                    "upload"
+                } else {
+                    "upload-marker"
+                },
+                &connection_id,
+                &bucket,
+                &item.name,
+                &item.key,
+                &item.local_path,
+                true,
+            );
+            task.total_bytes = item.size;
+            task.upload_conflict_action = upload_conflict_action;
+            workers.push(task.clone());
+            tasks.push(task);
+        }
+    }
+    manager.add_tasks(&app, &tasks)?;
+    for task in workers {
         spawn_task(
             app.clone(),
             manager.inner.clone(),
-            task.clone(),
+            task,
             client.clone(),
             bucket.clone(),
             None,
+            None,
         );
-        tasks.push(task);
     }
     Ok(tasks)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn enqueue_object_operation(
     app: AppHandle,
     connection_id: String,
+    destination_connection_id: Option<String>,
     keys: Vec<String>,
     destination_prefix: String,
     operation: String,
@@ -93,8 +129,26 @@ pub(crate) async fn enqueue_object_operation(
     if keys.is_empty() {
         return Ok(Vec::new());
     }
+    let destination_connection_id =
+        destination_connection_id.unwrap_or_else(|| connection_id.clone());
     let (client, bucket) = client_for_connection(&connection_id, connections.inner())?;
-    let roots = copy::plan_object_operations(&client, &bucket, keys, destination_prefix).await?;
+    let (target_client, target_bucket) =
+        client_for_connection(&destination_connection_id, connections.inner())?;
+    let same_storage = connections_share_bucket(
+        &connection_id,
+        &destination_connection_id,
+        connections.inner(),
+    )?;
+    let roots = copy::plan_object_operations(
+        &client,
+        &bucket,
+        &target_client,
+        &target_bucket,
+        same_storage,
+        keys,
+        destination_prefix,
+    )
+    .await?;
     let mut created = Vec::new();
     for root in roots {
         let folder = root.source_root.ends_with('/');
@@ -120,12 +174,17 @@ pub(crate) async fn enqueue_object_operation(
             false,
         );
         task.destination_key = root.destination_root;
+        task.destination_connection_id = destination_connection_id.clone();
+        task.destination_bucket = target_bucket.clone();
         manager.add_task(&app, task.clone())?;
-        created.push(task.clone());
         if let Some(error) = root.error {
-            manager.update_task(&app, &task.id, "failed", Some(error));
+            manager.update_task(&app, &task.id, "failed", Some(error.clone()));
+            task.status = "failed".to_string();
+            task.error = Some(error);
+            created.push(task);
             continue;
         }
+        created.push(task.clone());
         if folder {
             let mut children = Vec::new();
             for (source, destination) in root.objects {
@@ -145,6 +204,8 @@ pub(crate) async fn enqueue_object_operation(
                     false,
                 );
                 child.destination_key = destination;
+                child.destination_connection_id = destination_connection_id.clone();
+                child.destination_bucket = target_bucket.clone();
                 manager.add_task(&app, child.clone())?;
                 created.push(child.clone());
                 children.push(child);
@@ -160,6 +221,7 @@ pub(crate) async fn enqueue_object_operation(
                     client.clone(),
                     bucket.clone(),
                     None,
+                    Some((target_client.clone(), target_bucket.clone())),
                 );
             }
         } else {
@@ -170,6 +232,7 @@ pub(crate) async fn enqueue_object_operation(
                 client.clone(),
                 bucket.clone(),
                 None,
+                Some((target_client.clone(), target_bucket.clone())),
             );
         }
     }
@@ -225,6 +288,7 @@ pub(crate) fn enqueue_download(
                 client.clone(),
                 bucket.clone(),
                 Some(root),
+                None,
             );
         }
         tasks.push(task);
@@ -346,6 +410,25 @@ pub(crate) fn retry_transfer_task(
         return Err("只有失败、中断或已取消的任务可以重试。".to_string());
     }
     let (client, bucket) = client_for_connection(&original.connection_id, connections.inner())?;
+    if !original.bucket.is_empty() && original.bucket != bucket {
+        return Err("连接的 Bucket 已变化，请重新创建传输任务。".to_string());
+    }
+    let target = if matches!(original.operation.as_str(), "copy" | "move") {
+        let target_id = if original.destination_connection_id.is_empty() {
+            &original.connection_id
+        } else {
+            &original.destination_connection_id
+        };
+        Some(client_for_connection(target_id, connections.inner())?)
+    } else {
+        None
+    };
+    if let Some((_, target_bucket)) = &target
+        && !original.destination_bucket.is_empty()
+        && original.destination_bucket.as_str() != target_bucket
+    {
+        return Err("目标连接的 Bucket 已变化，请重新创建传输任务。".to_string());
+    }
     let mut retry = original.clone();
     retry.id = make_id();
     retry.parent_id = None;
@@ -371,6 +454,7 @@ pub(crate) fn retry_transfer_task(
         client,
         bucket,
         root,
+        target,
     );
     Ok(retry)
 }

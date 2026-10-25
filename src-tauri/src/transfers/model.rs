@@ -5,6 +5,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UploadConflictAction {
+    #[default]
+    Skip,
+    Overwrite,
+    KeepBoth,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransferTask {
@@ -16,6 +25,10 @@ pub struct TransferTask {
     pub display_name: String,
     pub object_key: String,
     pub destination_key: String,
+    #[serde(default)]
+    pub destination_connection_id: String,
+    #[serde(default)]
+    pub destination_bucket: String,
     pub local_path: String,
     pub relative_path: String,
     pub destination_root: String,
@@ -26,6 +39,8 @@ pub struct TransferTask {
     pub transferred_bytes: u64,
     pub created_at: u64,
     pub updated_at: u64,
+    #[serde(default)]
+    pub upload_conflict_action: UploadConflictAction,
     #[serde(skip)]
     pub overwrite: bool,
     #[serde(skip)]
@@ -76,6 +91,8 @@ pub(crate) fn new_task(
             .unwrap_or_else(|| key.to_string()),
         destination_root: String::new(),
         destination_key: String::new(),
+        destination_connection_id: String::new(),
+        destination_bucket: String::new(),
         status: "queued".to_string(),
         phase: None,
         error: None,
@@ -83,6 +100,7 @@ pub(crate) fn new_task(
         transferred_bytes: 0,
         created_at: timestamp,
         updated_at: timestamp,
+        upload_conflict_action: UploadConflictAction::Skip,
         overwrite,
         checkpoint: None,
     }
@@ -107,5 +125,8 @@ pub(crate) fn is_terminal(status: &str) -> bool {
 }
 
 pub(crate) fn is_folder_operation(operation: &str) -> bool {
-    matches!(operation, "folder" | "copy-folder" | "move-folder")
+    matches!(
+        operation,
+        "folder" | "upload-folder" | "copy-folder" | "move-folder"
+    )
 }

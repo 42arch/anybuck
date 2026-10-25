@@ -26,8 +26,11 @@ pub(crate) struct CopyCheckpoint {
 }
 
 pub(crate) async fn plan_object_operations(
-    client: &Client,
-    bucket: &str,
+    source_client: &Client,
+    source_bucket: &str,
+    target_client: &Client,
+    target_bucket: &str,
+    same_storage: bool,
     keys: Vec<String>,
     destination_prefix: String,
 ) -> Result<Vec<PlannedObjectRoot>, String> {
@@ -75,8 +78,9 @@ pub(crate) async fn plan_object_operations(
             )
         };
         root.destination_root = destination_root.clone();
-        if source_root == destination_root
-            || (is_folder && destination_root.starts_with(&source_root))
+        if same_storage
+            && (source_root == destination_root
+                || (is_folder && destination_root.starts_with(&source_root)))
         {
             root.error = Some("不能复制或移动到原位置或文件夹自身的子目录。".to_string());
             roots.push(root);
@@ -89,7 +93,7 @@ pub(crate) async fn plan_object_operations(
         }
 
         let source_keys = if is_folder {
-            match list_all_keys(client, bucket, &source_root).await {
+            match list_all_keys(source_client, source_bucket, &source_root).await {
                 Ok(keys) if !keys.is_empty() => keys,
                 Ok(_) => {
                     root.error = Some("源文件夹不存在或为空。".to_string());
@@ -106,7 +110,7 @@ pub(crate) async fn plan_object_operations(
             vec![source_root.clone()]
         };
 
-        match target_exists(client, bucket, &destination_root, is_folder).await {
+        match target_exists(target_client, target_bucket, &destination_root, is_folder).await {
             Ok(true) => {
                 root.error = Some("目标位置已有同名项目，请先处理冲突。".to_string());
                 roots.push(root);
@@ -163,7 +167,7 @@ async fn list_all_keys(client: &Client, bucket: &str, prefix: &str) -> Result<Ve
     Ok(keys)
 }
 
-async fn target_exists(
+pub(crate) async fn target_exists(
     client: &Client,
     bucket: &str,
     key: &str,
@@ -316,15 +320,17 @@ pub(crate) async fn copy_only(
 }
 
 pub(crate) async fn finish_move(
-    client: &Client,
-    bucket: &str,
+    source_client: &Client,
+    source_bucket: &str,
+    target_client: &Client,
+    target_bucket: &str,
     source: &str,
     target: &str,
     checkpoint: &CopyCheckpoint,
 ) -> Result<(), String> {
-    let target_head = client
+    let target_head = target_client
         .head_object()
-        .bucket(bucket)
+        .bucket(target_bucket)
         .key(target)
         .send()
         .await
@@ -334,7 +340,13 @@ pub(crate) async fn finish_move(
     {
         return Err("目标对象在复制后发生变化，未删除源对象。".to_string());
     }
-    let source_head = match client.head_object().bucket(bucket).key(source).send().await {
+    let source_head = match source_client
+        .head_object()
+        .bucket(source_bucket)
+        .key(source)
+        .send()
+        .await
+    {
         Ok(head) => head,
         Err(error)
             if error
@@ -350,10 +362,11 @@ pub(crate) async fn finish_move(
     {
         return Err("源对象在复制后发生变化，未删除源对象。".to_string());
     }
-    client
+    source_client
         .delete_object()
-        .bucket(bucket)
+        .bucket(source_bucket)
         .key(source)
+        .if_match(&checkpoint.source_etag)
         .send()
         .await
         .map_err(|error| format!("已复制到目标位置，但删除源对象失败：{error}"))?;

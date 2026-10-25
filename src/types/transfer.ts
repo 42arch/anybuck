@@ -6,23 +6,28 @@ export interface DownloadObjectsResult {
 export interface TransferTask {
   id: string
   parentId: string | null
-  operation: 'upload' | 'download' | 'folder' | 'copy' | 'move' | 'copy-folder' | 'move-folder'
+  operation: 'upload' | 'upload-marker' | 'upload-folder' | 'download' | 'folder' | 'copy' | 'move' | 'copy-folder' | 'move-folder'
   connectionId: string
   bucket: string
   displayName: string
   objectKey: string
   destinationKey: string
+  destinationConnectionId: string
+  destinationBucket: string
   localPath: string
   relativePath: string
   destinationRoot: string
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'skipped'
-  phase: 'copying' | 'deleting' | null
+  phase: 'copying' | 'downloading' | 'uploading' | 'verifying' | 'deleting' | null
   error: string | null
   totalBytes: number | null
   transferredBytes: number
   createdAt: number
   updatedAt: number
+  uploadConflictAction: UploadConflictAction
 }
+
+export type UploadConflictAction = 'skip' | 'overwrite' | 'keepBoth'
 
 export interface DownloadPlanSummary {
   planId: string

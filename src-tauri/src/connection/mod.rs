@@ -1,6 +1,9 @@
 pub(crate) mod aws;
 pub(crate) mod cos;
+pub(crate) mod gcs;
+pub(crate) mod kodo;
 pub(crate) mod manager;
 pub(crate) mod model;
 pub(crate) mod oss;
 pub(crate) mod r2;
+pub(crate) mod tos;
