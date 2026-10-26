@@ -2,6 +2,7 @@ import type { SettingsOption } from './types'
 import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
+import { AppUpdateSettings } from './app-update-settings'
 import { ConnectionsSettings } from './connections-settings'
 import { DownloadPathSettings } from './download-path-settings'
 import { SettingsSidebar } from './settings-sidebar'
@@ -70,6 +71,8 @@ export function SettingsView({ onNotice }: SettingsViewProps) {
           <ConnectionsSettings onNotice={onNotice} />
           <Separator />
           <DownloadPathSettings onNotice={onNotice} />
+          <Separator />
+          <AppUpdateSettings />
         </CardContent>
       </Card>
     </div>
