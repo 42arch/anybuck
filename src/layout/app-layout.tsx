@@ -1,10 +1,12 @@
 import type { StorageProvider } from '@/types/connection'
 import type { View } from '@/types/view'
+import { useEffect, useRef } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { ConnectionDialog } from '@/components/connection/connection-dialog'
 import { TransferConfirmationDialogs } from '@/components/transfers/transfer-confirmation-dialogs'
 import { TransferProgressToast } from '@/components/transfers/transfer-progress-toast'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
+import { useAppUpdateQuery } from '@/hooks/use-app-update-query'
 import { useConnectionActions } from '@/hooks/use-connection-actions'
 import { useStorageConnection } from '@/hooks/use-storage-connection'
 import { useTransferTasks } from '@/hooks/use-transfer-tasks'
@@ -31,6 +33,15 @@ export function AppLayout() {
     onConnected: () => navigateToView('files'),
   })
   const transferTasks = useTransferTasks()
+  const { data: availableUpdate } = useAppUpdateQuery()
+  const notifiedUpdateVersionRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (availableUpdate && notifiedUpdateVersionRef.current !== availableUpdate.version) {
+      notifiedUpdateVersionRef.current = availableUpdate.version
+      showNotice(`发现新版本 ${availableUpdate.version}，可在设置中安装。`)
+    }
+  }, [availableUpdate])
 
   function navigateToView(nextView: View) {
     navigate(viewPaths[nextView])

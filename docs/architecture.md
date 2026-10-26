@@ -4,8 +4,9 @@ MVP v0.1
 
 桌面应用 · 本地优先 · 多云可扩展
 
-## 当前实现状态（2026-10-25）
+## 当前实现状态（2026-10-26）
 
+- 桌面正式安装包集成 Tauri updater：启动时自动检查 GitHub 已发布 Release 的 `latest.json`，设置页支持手动检查、查看更新说明、下载并安装。更新包由独立的 Tauri 更新密钥签名，客户端校验签名及版本；运行中或排队中的传输任务会推迟安装。GitHub Actions 从仓库 Secret 读取私钥，生成各平台更新产物及元数据；首次启用前需配置 Secret 并发布带 updater 的安装包，旧安装包需手动升级一次。私钥配置和发布步骤见 `docs/updates.md`。
 - 已增加七牛云 Kodo 和火山引擎 TOS 连接。Kodo 使用 `https://s3.<region>.qiniucs.com`、S3 空间名及路径式寻址；连接现有空间时不套用新建空间的命名规则，实际 S3 空间名仍需以七牛空间概览为准。其 S3 API 域名要求签名，因此公开链接需配置已绑定空间的域名。TOS 使用 `https://tos-s3-<region>.volces.com` 和虚拟主机寻址，默认公开对象地址使用 `https://<bucket>.tos-<region>.volces.com/<key>`；Region 输入需填写 Region ID，不包含 Endpoint 的 `tos-` 前缀。两者当前只接受长期 AK/SK，密钥分别保存在系统凭证库的独立服务项中，对象浏览及传输队列复用现有 S3 实现。尚未用真实 Kodo/TOS Bucket 验证上传、删除、复制、移动及错误恢复等兼容操作。
 - 已增加 Google Cloud Storage 连接入口，使用 GCS XML API、`https://storage.googleapis.com` 路径式 Endpoint 和系统凭证库中的 HMAC 互操作密钥。签名地域使用 `us-east-1`；表单不要求填写 Bucket 所在地域，也不接受服务账号 JSON 密钥。连接成功时会执行首目录的 `ListObjectsV2` 请求。文件浏览、上传、下载、删除、预览和队列操作复用现有 S3 实现。文件详情分别显示需 Google 账号登录的 `https://storage.cloud.google.com/<bucket>/<key>` 浏览器链接，以及通过匿名请求检查的 `https://storage.googleapis.com/<bucket>/<key>` 公开链接；仅匿名检查成功时标为公开，可按连接配置自定义公开域名。现阶段尚未用真实 GCS Bucket 实测所有操作；特别是大于 5 GiB 的服务端复制与移动所用的 S3 `UploadPartCopy` 路径尚未确认兼容。
 
