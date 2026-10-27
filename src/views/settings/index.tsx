@@ -1,11 +1,13 @@
 import type { SettingsOption } from './types'
-import { useEffect, useRef, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useState } from 'react'
+import { Card, CardContent } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { AppUpdateSettings } from './app-update-settings'
 import { ConnectionsSettings } from './connections-settings'
 import { DownloadPathSettings } from './download-path-settings'
+import { LanguageSettings } from './language-settings'
 import { SettingsSidebar } from './settings-sidebar'
+import { ThemeSettings } from './theme-settings'
 import { settingsItems } from './types'
 
 interface SettingsViewProps {
@@ -13,40 +15,24 @@ interface SettingsViewProps {
 }
 
 export function SettingsView({ onNotice }: SettingsViewProps) {
-  const [activeOption, setActiveOption] = useState<SettingsOption>('connections')
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [activeOption, setActiveOption] = useState<SettingsOption>('general')
 
-  useEffect(() => {
-    const root = scrollContainerRef.current
-    if (!root)
-      return
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.find(entry => entry.isIntersecting)
-        if (visible) {
-          const id = visible.target.id.replace('settings-', '') as SettingsOption
-          setActiveOption(id)
-        }
-      },
-      {
-        root,
-        rootMargin: '-10% 0px -60% 0px',
-        threshold: 0,
-      },
-    )
-
-    const sections = root.querySelectorAll('section[id^="settings-"]')
-    sections.forEach(section => observer.observe(section))
-
-    return () => observer.disconnect()
-  }, [])
-
-  function scrollToSection(id: SettingsOption) {
-    setActiveOption(id)
-    const element = document.getElementById(`settings-${id}`)
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  function renderActiveSettings() {
+    switch (activeOption) {
+      case 'connections':
+        return <ConnectionsSettings onNotice={onNotice} />
+      case 'general':
+        return (
+          <div className="flex flex-col gap-4">
+            <LanguageSettings />
+            <Separator />
+            <ThemeSettings />
+            <Separator />
+            <DownloadPathSettings onNotice={onNotice} />
+          </div>
+        )
+      case 'app-update':
+        return <AppUpdateSettings />
     }
   }
 
@@ -55,24 +41,12 @@ export function SettingsView({ onNotice }: SettingsViewProps) {
       <SettingsSidebar
         items={settingsItems}
         activeOption={activeOption}
-        onSelect={scrollToSection}
+        onSelect={setActiveOption}
       />
 
-      <Card className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-0 overflow-hidden">
-        <CardHeader className="shrink-0 border-b pb-4">
-          <CardTitle className="text-base font-semibold">设置</CardTitle>
-          {/* <CardDescription>管理对象存储连接和本地配置选项。</CardDescription> */}
-        </CardHeader>
-
-        <CardContent
-          ref={scrollContainerRef}
-          className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6"
-        >
-          <ConnectionsSettings onNotice={onNotice} />
-          <Separator />
-          <DownloadPathSettings onNotice={onNotice} />
-          <Separator />
-          <AppUpdateSettings />
+      <Card className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-0 overflow-hidden py-0">
+        <CardContent className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 md:p-6">
+          {renderActiveSettings()}
         </CardContent>
       </Card>
     </div>

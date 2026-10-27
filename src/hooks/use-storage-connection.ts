@@ -16,6 +16,8 @@ import {
   renameSavedConnection,
   updateSavedConnection,
 } from '@/api/connections'
+import { errorMessage } from '@/api/invoke'
+import i18n from '@/i18n'
 import { useConnectionStore } from '@/store/connection-store'
 import { useSettingsStore } from '@/store/settings-store'
 
@@ -116,7 +118,7 @@ export function useStorageConnection() {
   async function renameConnection(connectionId: string, name: string) {
     const trimmedName = name.trim()
     if (!trimmedName || [...trimmedName].length > 100)
-      throw new Error('连接名称应为 1–100 个字符。')
+      throw new Error(i18n.t('workflow.invalidConnectionName'))
 
     if (savedConnectionIds.has(connectionId)) {
       const updated = await renameSavedConnection(connectionId, trimmedName)
@@ -125,7 +127,7 @@ export function useStorageConnection() {
       void queryClient.invalidateQueries({ queryKey: connectionQueryKey })
     }
     else if (!sessionConnections.some(item => item.connectionId === connectionId)) {
-      throw new Error('连接不存在，请刷新连接列表后重试。')
+      throw new Error(i18n.t('workflow.connectionMissing'))
     }
     renameSessionConnection(connectionId, trimmedName)
   }
@@ -136,7 +138,7 @@ export function useStorageConnection() {
     selectionVersion,
     connections,
     savedConnections,
-    connectionListError: savedQuery.error instanceof Error ? savedQuery.error.message : '',
+    connectionListError: savedQuery.error ? errorMessage(savedQuery.error) : '',
     isRestoring: savedQuery.isPending,
     selectConnection,
     connect,

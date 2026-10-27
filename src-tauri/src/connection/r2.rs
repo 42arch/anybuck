@@ -1,10 +1,11 @@
 use crate::connection::manager::{PreparedConnection, new_connection_id};
 use crate::connection::model::{ConnectStorageRequest, SavedStorageConnection, StorageProvider};
+use crate::error::{AppError, ErrorCode};
 use aws_sdk_s3::{Client, config::Credentials};
 
 pub(crate) async fn prepare_connection(
     request: &ConnectStorageRequest,
-) -> Result<PreparedConnection, String> {
+) -> Result<PreparedConnection, AppError> {
     let account_id = request.account_id.trim();
     let bucket = request.bucket.trim();
     let requested_name = request.name.trim();
@@ -16,10 +17,13 @@ pub(crate) async fn prepare_connection(
         || access_key_id.is_empty()
         || secret_access_key.is_empty()
     {
-        return Err("请填写账号 ID、Access Key、Secret Access Key 和 Bucket。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidCredentials)
+            .param("provider", "Cloudflare R2"));
     }
     if account_id.len() != 32 || !account_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err("Cloudflare 账号 ID 应为 32 位十六进制字符。".to_string());
+        return Err(
+            AppError::new(ErrorCode::ConnectionInvalidAccountId).param("provider", "Cloudflare R2")
+        );
     }
 
     let endpoint = request
@@ -37,7 +41,9 @@ pub(crate) async fn prepare_connection(
         format!("https://{account_id}.fedramp.r2.cloudflarestorage.com"),
     ];
     if !allowed_endpoints.iter().any(|allowed| allowed == &endpoint) {
-        return Err("Endpoint 必须是该账号对应的 Cloudflare R2 S3 API 地址。".to_string());
+        return Err(
+            AppError::new(ErrorCode::ConnectionInvalidEndpoint).param("provider", "Cloudflare R2")
+        );
     }
 
     let credentials = Credentials::new(

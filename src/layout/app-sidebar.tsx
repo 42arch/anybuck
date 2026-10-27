@@ -11,6 +11,7 @@ import {
   SpinnerIcon,
 } from '@phosphor-icons/react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { RenameConnectionDialog } from '@/components/connection/rename-connection-dialog'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -31,6 +32,7 @@ import {
   SidebarMenuSubItem,
   useSidebar,
 } from '@/components/ui/sidebar'
+import i18n from '@/i18n'
 
 interface AppSidebarProps {
   view: View
@@ -46,6 +48,7 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ view, connections, connectingConnectionIds, activeConnectionId, onViewChange, onConnectionChange, onManageConnection, onConnectConnection, onDisconnectConnection, onAddConnection }: AppSidebarProps) {
+  const { t } = useTranslation()
   const { setOpenMobile } = useSidebar()
   const [expandedProviders, setExpandedProviders] = useState<StorageProvider[]>([
     'cloudflare-r2',
@@ -61,11 +64,11 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
   const providerGroups: { id: StorageProvider, label: string }[] = [
     { id: 'cloudflare-r2', label: 'Cloudflare R2' },
     { id: 'aws-s3', label: 'AWS S3' },
-    { id: 'tencent-cos', label: '腾讯云 COS' },
-    { id: 'aliyun-oss', label: '阿里云 OSS' },
+    { id: 'tencent-cos', label: i18n.t('providers.tencentCloudCos') },
+    { id: 'aliyun-oss', label: i18n.t('providers.alibabaCloudOss') },
     { id: 'google-cloud-storage', label: 'Google Cloud Storage' },
-    { id: 'qiniu-kodo', label: '七牛云 Kodo' },
-    { id: 'volcengine-tos', label: '火山引擎 TOS' },
+    { id: 'qiniu-kodo', label: i18n.t('providers.qiniuKodo') },
+    { id: 'volcengine-tos', label: i18n.t('providers.volcengineTos') },
   ]
   const visibleProviderGroups = providerGroups.filter(group => connections.some(item => item.provider === group.id))
 
@@ -104,33 +107,33 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
             <CloudIcon className="size-5" weight="fill" />
           </span>
           <div className="flex min-w-0 flex-col">
-            <strong className="text-sm tracking-tight text-white">cloudstore</strong>
-            <span className="text-xs text-muted-foreground">对象存储工作台</span>
+            <strong className="text-sm tracking-tight text-sidebar-accent-foreground">cloudstore</strong>
+            <span className="text-xs text-sidebar-foreground">{t('nav.subtitle')}</span>
           </div>
         </div>
       </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="text-[#78879a]">工作台</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-sidebar-foreground">{t('nav.workspace')}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="gap-1">
               <SidebarMenuItem>
-                <SidebarMenuButton className="data-active:[&>svg]:text-[#ff965f]" isActive={view === 'files'} onClick={() => selectView('files')}>
+                <SidebarMenuButton className="data-active:[&>svg]:text-sidebar-primary" isActive={view === 'files'} onClick={() => selectView('files')}>
                   <FoldersIcon />
-                  <span>文件管理</span>
+                  <span>{t('nav.files')}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton className="data-active:[&>svg]:text-[#ff965f]" isActive={view === 'transfers'} onClick={() => selectView('transfers')}>
+                <SidebarMenuButton className="data-active:[&>svg]:text-sidebar-primary" isActive={view === 'transfers'} onClick={() => selectView('transfers')}>
                   <CloudArrowUpIcon />
-                  <span>任务中心</span>
+                  <span>{t('nav.transfers')}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton className="data-active:[&>svg]:text-[#ff965f]" isActive={view === 'recent'} onClick={() => selectView('recent')}>
+                <SidebarMenuButton className="data-active:[&>svg]:text-sidebar-primary" isActive={view === 'recent'} onClick={() => selectView('recent')}>
                   <ClockCounterClockwiseIcon />
-                  <span>最近访问</span>
+                  <span>{t('nav.recent')}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -138,8 +141,8 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-[#78879a]">存储连接</SidebarGroupLabel>
-          <SidebarGroupAction aria-label="添加连接" title="添加连接" onClick={() => openConnectionDialog()}>
+          <SidebarGroupLabel className="text-sidebar-foreground">{t('nav.connections')}</SidebarGroupLabel>
+          <SidebarGroupAction aria-label={t('nav.addConnection')} title={t('nav.addConnection')} onClick={() => openConnectionDialog()}>
             <PlusIcon />
           </SidebarGroupAction>
           <SidebarGroupContent className="pl-2">
@@ -155,7 +158,7 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                   value={group.id}
                   className="border-none not-last:border-b-0 data-open:bg-transparent"
                 >
-                  <AccordionTrigger className="h-8 cursor-pointer items-center gap-2 rounded-md font-normal text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline">
+                  <AccordionTrigger className="h-8 cursor-pointer items-center gap-2 rounded-md font-normal text-sidebar-foreground hover:bg-sidebar-surface hover:no-underline">
                     <div className="flex min-w-0 items-center gap-2 truncate">
                       <CloudIcon className="size-4 shrink-0" />
                       <span className="truncate">{group.label}</span>
@@ -171,7 +174,7 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                                 <SidebarMenuSubButton
                                   render={<button type="button" />}
                                   isActive={selectedConnectionId === item.connectionId || (view === 'files' && activeConnectionId === item.connectionId)}
-                                  className="w-full [&>svg]:text-sidebar-foreground data-active:[&>svg]:text-[#ff955e]"
+                                  className="w-full [&>svg]:text-sidebar-foreground data-active:[&>svg]:text-sidebar-primary"
                                   aria-busy={connectingConnectionIds.has(item.connectionId)}
                                   onClick={() => selectConnectionItem(item)}
                                   onDoubleClick={() => onConnectConnection(item.connectionId)}
@@ -182,12 +185,12 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                               <DatabaseIcon />
                               <span className="min-w-0 flex-1 truncate text-left">{item.name}</span>
                               {connectingConnectionIds.has(item.connectionId)
-                                ? <SpinnerIcon className="size-3.5 shrink-0 animate-spin text-primary" role="status" aria-label="正在连接" />
+                                ? <SpinnerIcon className="size-3.5 shrink-0 animate-spin text-primary" role="status" aria-label={t('nav.connecting')} />
                                 : (
                                     <span
                                       role="status"
-                                      aria-label={item.connected ? '已连接' : '已断开'}
-                                      title={item.connected ? '已连接' : '已断开'}
+                                      aria-label={item.connected ? t('nav.connected') : t('nav.disconnected')}
+                                      title={item.connected ? t('nav.connected') : t('nav.disconnected')}
                                       className={`size-2 shrink-0 rounded-full ${item.connected ? 'bg-emerald-500' : 'bg-muted-foreground/50'}`}
                                     />
                                   )}
@@ -196,13 +199,13 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                               {item.connected
                                 ? (
                                     <>
-                                      <ContextMenuItem onClick={() => selectConnection(item.connectionId)}>切换到此连接</ContextMenuItem>
-                                      <ContextMenuItem onClick={() => onDisconnectConnection(item.connectionId)}>断开连接</ContextMenuItem>
+                                      <ContextMenuItem onClick={() => selectConnection(item.connectionId)}>{t('nav.switchConnection')}</ContextMenuItem>
+                                      <ContextMenuItem onClick={() => onDisconnectConnection(item.connectionId)}>{t('nav.disconnect')}</ContextMenuItem>
                                     </>
                                   )
-                                : <ContextMenuItem onClick={() => onConnectConnection(item.connectionId)}>连接</ContextMenuItem>}
-                              <ContextMenuItem onClick={() => setRenamingConnection(item)}>重命名</ContextMenuItem>
-                              <ContextMenuItem onClick={() => manageConnection(item.connectionId)}>查看连接管理</ContextMenuItem>
+                                : <ContextMenuItem onClick={() => onConnectConnection(item.connectionId)}>{t('nav.connect')}</ContextMenuItem>}
+                              <ContextMenuItem onClick={() => setRenamingConnection(item)}>{t('nav.rename')}</ContextMenuItem>
+                              <ContextMenuItem onClick={() => manageConnection(item.connectionId)}>{t('nav.manageConnection')}</ContextMenuItem>
                             </ContextMenuContent>
                           </ContextMenu>
                         </SidebarMenuSubItem>
@@ -219,9 +222,9 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
       <SidebarFooter className="p-4">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton className="data-active:[&>svg]:text-[#ff965f]" isActive={view === 'settings'} onClick={() => selectView('settings')}>
+            <SidebarMenuButton className="data-active:[&>svg]:text-sidebar-primary" isActive={view === 'settings'} onClick={() => selectView('settings')}>
               <GearSixIcon />
-              <span>设置</span>
+              <span>{t('common.settings')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

@@ -1,6 +1,7 @@
 import type { TransferTask } from '@/types/transfer'
 import { SpinnerIcon } from '@phosphor-icons/react'
 import { Progress } from '@/components/ui/progress'
+import i18n from '@/i18n'
 
 interface TransferProgressToastProps {
   tasks: TransferTask[]
@@ -12,18 +13,18 @@ export function TransferProgressToast({ tasks }: TransferProgressToastProps) {
     return null
 
   const activeTransferLabel = activeTransfer.operation === 'upload'
-    ? '正在上传文件'
+    ? i18n.t('transferProgress.uploadingFile')
     : activeTransfer.operation === 'download'
-      ? '正在下载文件'
+      ? i18n.t('transferProgress.downloadingFile')
       : activeTransfer.phase === 'downloading'
-        ? '正在读取源对象'
+        ? i18n.t('transferPhase.readingSource')
         : activeTransfer.phase === 'uploading'
-          ? '正在上传目标对象'
+          ? i18n.t('transferPhase.uploadingDestination')
           : activeTransfer.phase === 'verifying'
-            ? '正在验证目标对象'
+            ? i18n.t('transferPhase.verifyingDestination')
             : activeTransfer.phase === 'deleting'
-              ? '正在删除源对象'
-              : activeTransfer.operation === 'copy' ? '正在复制对象' : '正在移动对象'
+              ? i18n.t('transferPhase.deletingSource')
+              : activeTransfer.operation === 'copy' ? i18n.t('transferProgress.copyingObject') : i18n.t('transferProgress.movingObject')
 
   return (
     <div
@@ -42,7 +43,7 @@ export function TransferProgressToast({ tasks }: TransferProgressToastProps) {
             </span>
             <Progress
               value={activeTransfer.totalBytes === 0 ? 0 : activeTransfer.transferredBytes / activeTransfer.totalBytes * 100}
-              aria-label={`${activeTransfer.displayName} 传输进度`}
+              aria-label={i18n.t('dynamic.transferProgress', { name: activeTransfer.displayName })}
             />
           </div>
         )}

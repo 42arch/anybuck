@@ -5,6 +5,7 @@ use crate::connection::model::{
     ConnectStorageRequest, SavedStorageConnection, SavedStorageCredentials,
     StorageConnectionResult, StorageProvider, UpdateStorageConnectionRequest,
 };
+use crate::error::{AppError, ErrorCode};
 use crate::persistence::connections::{
     load_saved_connections, remove_saved_connection, rename_saved_connection, save_connection,
 };
@@ -19,7 +20,7 @@ pub async fn connect_storage(
     app: AppHandle,
     request: ConnectStorageRequest,
     state: State<'_, StorageConnectionState>,
-) -> Result<StorageConnectionResult, String> {
+) -> Result<StorageConnectionResult, AppError> {
     let prepared = prepare_connection(&request).await?;
     let page = fetch_page(&prepared.client, &prepared.profile.bucket, "", None).await?;
 
@@ -35,18 +36,24 @@ pub async fn connect_storage(
             save_connection(&app_for_store, &profile, &credentials)
         })
         .await
-        .map_err(|error| format!("无法保存连接信息：{error}"))??;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::ConnectionSaveFailed, error.to_string())
+        })??;
     }
 
     register_connection(state.inner(), prepared, page)
 }
 
 #[tauri::command]
-pub async fn list_saved_connections(app: AppHandle) -> Result<Vec<SavedStorageConnection>, String> {
+pub async fn list_saved_connections(
+    app: AppHandle,
+) -> Result<Vec<SavedStorageConnection>, AppError> {
     let app_for_load = app.clone();
     tauri::async_runtime::spawn_blocking(move || load_saved_connections(&app_for_load))
         .await
-        .map_err(|error| format!("无法读取已保存的存储连接：{error}"))?
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::ConnectionLoadFailed, error.to_string())
+        })?
 }
 
 #[tauri::command]
@@ -54,12 +61,12 @@ pub async fn rename_connection(
     app: AppHandle,
     connection_id: String,
     name: String,
-) -> Result<SavedStorageConnection, String> {
+) -> Result<SavedStorageConnection, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         rename_saved_connection(&app, &connection_id, &name)
     })
     .await
-    .map_err(|error| format!("无法重命名连接：{error}"))?
+    .map_err(|error| AppError::with_detail(ErrorCode::ConnectionRenameFailed, error.to_string()))?
 }
 
 #[tauri::command]
@@ -67,7 +74,7 @@ pub async fn connect_saved_connection(
     app: AppHandle,
     connection_id: String,
     state: State<'_, StorageConnectionState>,
-) -> Result<StorageConnectionResult, String> {
+) -> Result<StorageConnectionResult, AppError> {
     let app_for_load = app.clone();
     let connection_id_for_load = connection_id.clone();
     let profile = tauri::async_runtime::spawn_blocking(move || {
@@ -78,8 +85,8 @@ pub async fn connect_saved_connection(
         })
     })
     .await
-    .map_err(|error| format!("无法读取已保存的存储连接：{error}"))??
-    .ok_or_else(|| "已保存的连接不存在，请刷新连接列表后重试。".to_string())?;
+    .map_err(|error| AppError::with_detail(ErrorCode::ConnectionLoadFailed, error.to_string()))??
+    .ok_or_else(|| AppError::new(ErrorCode::ConnectionNotFound))?;
     let profile_for_credentials = profile.clone();
     let credentials = tauri::async_runtime::spawn_blocking(move || {
         read_saved_credentials(
@@ -88,7 +95,12 @@ pub async fn connect_saved_connection(
         )
     })
     .await
-    .map_err(|error| format!("无法读取系统凭证库：{error}"))??;
+    .map_err(|error| {
+        AppError::with_detail(
+            ErrorCode::ConnectionCredentialsUnavailable,
+            error.to_string(),
+        )
+    })??;
     connect_runtime(
         ConnectStorageRequest {
             connection_id: Some(profile.id),
@@ -112,7 +124,7 @@ fn ensure_target_edit_safe(
     manager: &TransferManager,
     connection_id: &str,
     target_changed: bool,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if !target_changed {
         return Ok(());
     }
@@ -120,10 +132,10 @@ fn ensure_target_edit_safe(
         .inner
         .tasks
         .lock()
-        .map_err(|_| "传输状态不可用。".to_string())?;
+        .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?;
     let has_retryable_task = target_edit_conflicts(&tasks, connection_id);
     if has_retryable_task {
-        return Err("此连接仍有关联的待处理或可重试传输任务。请完成或清除这些任务后再修改 Bucket、地域或 Endpoint；仅更新名称或凭证可以继续。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionTargetBusy));
     }
     Ok(())
 }
@@ -141,14 +153,14 @@ pub async fn update_saved_connection(
     request: UpdateStorageConnectionRequest,
     state: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
-) -> Result<StorageConnectionResult, String> {
+) -> Result<StorageConnectionResult, AppError> {
     let connection_id = request.connection_id.trim();
     let name = request.name.trim();
     if connection_id.is_empty() {
-        return Err("连接 ID 不能为空。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidId));
     }
     if name.is_empty() || name.chars().count() > 100 {
-        return Err("连接名称应为 1–100 个字符。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidName));
     }
     let app_for_load = app.clone();
     let id_for_load = connection_id.to_string();
@@ -160,8 +172,8 @@ pub async fn update_saved_connection(
         })
     })
     .await
-    .map_err(|error| format!("无法读取已保存的连接：{error}"))??
-    .ok_or_else(|| "已保存的连接不存在，请刷新连接列表后重试。".to_string())?;
+    .map_err(|error| AppError::with_detail(ErrorCode::ConnectionLoadFailed, error.to_string()))??
+    .ok_or_else(|| AppError::new(ErrorCode::ConnectionNotFound))?;
 
     let mut credentials = match request.credentials {
         Some(credentials) => credentials,
@@ -170,7 +182,12 @@ pub async fn update_saved_connection(
             let id = original.id.clone();
             tauri::async_runtime::spawn_blocking(move || read_saved_credentials(provider, &id))
                 .await
-                .map_err(|error| format!("无法读取系统凭证库：{error}"))??
+                .map_err(|error| {
+                    AppError::with_detail(
+                        ErrorCode::ConnectionCredentialsUnavailable,
+                        error.to_string(),
+                    )
+                })??
         }
     };
     credentials.access_key_id = credentials.access_key_id.trim().to_string();
@@ -208,14 +225,16 @@ pub async fn update_saved_connection(
         let current = load_saved_connections(&app_for_store)?
             .into_iter()
             .find(|profile| profile.id == original.id)
-            .ok_or_else(|| "连接已被删除，请刷新连接列表后重试。".to_string())?;
+            .ok_or_else(|| AppError::new(ErrorCode::ConnectionNotFound))?;
         if current != original {
-            return Err("连接信息已在其他操作中更新，请刷新后重试。".to_string());
+            return Err(AppError::new(ErrorCode::ConnectionChanged));
         }
         save_connection(&app_for_store, &profile_for_store, &credentials)
     })
     .await
-    .map_err(|error| format!("无法保存已编辑的连接：{error}"))??;
+    .map_err(|error| {
+        AppError::with_detail(ErrorCode::ConnectionUpdateFailed, error.to_string())
+    })??;
     register_connection(state.inner(), prepared, page)
 }
 
@@ -223,11 +242,11 @@ pub async fn update_saved_connection(
 pub fn disconnect_connection(
     connection_id: String,
     state: State<'_, StorageConnectionState>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     state
         .connections
         .lock()
-        .map_err(|_| "存储连接状态不可用，请重启应用后重试。".to_string())?
+        .map_err(|_| AppError::new(ErrorCode::ConnectionStateUnavailable))?
         .remove(&connection_id);
     Ok(())
 }
@@ -237,15 +256,17 @@ pub async fn forget_saved_connection(
     app: AppHandle,
     connection_id: String,
     state: State<'_, StorageConnectionState>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let id_for_store = connection_id.clone();
     tauri::async_runtime::spawn_blocking(move || remove_saved_connection(&app, &id_for_store))
         .await
-        .map_err(|error| format!("无法清除已保存的连接：{error}"))??;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::ConnectionDeleteFailed, error.to_string())
+        })??;
     state
         .connections
         .lock()
-        .map_err(|_| "存储连接状态不可用，请重启应用后重试。".to_string())?
+        .map_err(|_| AppError::new(ErrorCode::ConnectionStateUnavailable))?
         .remove(&connection_id);
     Ok(())
 }

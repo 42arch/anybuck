@@ -1,6 +1,7 @@
 import type { StorageProvider } from '@/types/connection'
 import type { View } from '@/types/view'
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { ConnectionDialog } from '@/components/connection/connection-dialog'
 import { TransferConfirmationDialogs } from '@/components/transfers/transfer-confirmation-dialogs'
@@ -12,7 +13,7 @@ import { useStorageConnection } from '@/hooks/use-storage-connection'
 import { useTransferTasks } from '@/hooks/use-transfer-tasks'
 import { AppHeader } from '@/layout/app-header'
 import { AppSidebar } from '@/layout/app-sidebar'
-import { viewFromPath, viewPaths, viewTitles } from '@/lib/navigation'
+import { viewFromPath, viewPaths, viewTitleKeys } from '@/lib/navigation'
 import { showNotice } from '@/lib/notice'
 import { useConnectionDialogStore } from '@/store/connection-dialog-store'
 import { FilesView } from '@/views/files'
@@ -21,6 +22,7 @@ import { SettingsView } from '@/views/settings'
 import { TransfersView } from '@/views/transfers'
 
 export function AppLayout() {
+  const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
   const openConnectionDialog = useConnectionDialogStore(state => state.openDialog)
@@ -39,9 +41,9 @@ export function AppLayout() {
   useEffect(() => {
     if (availableUpdate && notifiedUpdateVersionRef.current !== availableUpdate.version) {
       notifiedUpdateVersionRef.current = availableUpdate.version
-      showNotice(`发现新版本 ${availableUpdate.version}，可在设置中安装。`)
+      showNotice(t('dynamic.updateAvailable', { version: availableUpdate.version }))
     }
-  }, [availableUpdate])
+  }, [availableUpdate, t])
 
   function navigateToView(nextView: View) {
     navigate(viewPaths[nextView])
@@ -67,7 +69,7 @@ export function AppLayout() {
         onAddConnection={(provider?: StorageProvider) => openConnectionDialog(provider)}
       />
       <SidebarInset className="h-svh min-h-0 min-w-0 overflow-hidden bg-background">
-        <AppHeader title={viewTitles[view]} connected={Boolean(connection)} />
+        <AppHeader title={t(viewTitleKeys[view])} connected={Boolean(connection)} />
         <div className="mx-auto flex min-h-0 w-full max-w-screen-2xl flex-1 flex-col gap-4 overflow-y-auto p-2 md:p-3">
           <div className="flex min-h-0 flex-1 flex-col">
             <Routes>

@@ -1,10 +1,10 @@
 import type { View } from '@/types/view'
 
-export const viewTitles: Record<View, string> = {
-  files: '文件管理',
-  transfers: '任务中心',
-  recent: '最近访问',
-  settings: '设置',
+export const viewTitleKeys: Record<View, 'nav.files' | 'nav.transfers' | 'nav.recent' | 'common.settings'> = {
+  files: 'nav.files',
+  transfers: 'nav.transfers',
+  recent: 'nav.recent',
+  settings: 'common.settings',
 }
 
 export const viewPaths: Record<View, string> = {

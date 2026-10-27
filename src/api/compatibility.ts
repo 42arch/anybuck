@@ -1,12 +1,18 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invokeCommand } from '@/api/invoke'
 
 export type ProbeMode = 'quick' | 'full'
 export type ProbeStatus = 'passed' | 'failed' | 'unsupported' | 'permissionDenied' | 'skipped'
 
+export interface ProbeDiagnostic {
+  code: string
+  params?: Record<string, string>
+  detail?: string
+}
+
 export interface ProbeCheck {
   id: string
   status: ProbeStatus
-  detail: string
+  diagnostic: ProbeDiagnostic
 }
 
 export interface ProbeReport {
@@ -15,9 +21,9 @@ export interface ProbeReport {
   mode: ProbeMode
   prefix: string
   checks: ProbeCheck[]
-  cleanupFailures: string[]
+  cleanupFailures: ProbeDiagnostic[]
 }
 
 export function runCompatibilityProbe(connectionId: string, mode: ProbeMode) {
-  return invoke<ProbeReport>('run_compatibility_probe', { connectionId, mode })
+  return invokeCommand<ProbeReport>('run_compatibility_probe', { connectionId, mode })
 }

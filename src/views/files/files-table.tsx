@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import i18n from '@/i18n'
 import { cn } from '@/lib/utils'
 import { FileActionsMenu } from './file-actions-menu'
 
@@ -52,26 +53,26 @@ export function FilesTable({
   return (
     <Table containerClassName="overflow-visible">
       <TableHeader>
-        <TableRow className="bg-[#fbfcfd]">
-          <TableHead className="sticky top-0 z-10 w-10 bg-[#fbfcfd]">
+        <TableRow className="bg-secondary">
+          <TableHead className="sticky top-0 z-10 w-10 bg-secondary">
             <Checkbox
-              aria-label="选择或取消当前页全部项目"
+              aria-label={i18n.t('filesTable.selectAllPageItems')}
               checked={allSelected}
               onCheckedChange={onSelectAll}
             />
           </TableHead>
-          <TableHead className="sticky top-0 z-10 bg-[#fbfcfd]">
-            <Button variant="ghost" className="px-0" onClick={onSortToggle} title="按当前页名称排序">
-              名称
+          <TableHead className="sticky top-0 z-10 bg-secondary">
+            <Button variant="ghost" className="px-0" onClick={onSortToggle} title={i18n.t('filesTable.sortPageByName')}>
+              {i18n.t('filesTable.name')}
               <ArrowDownIcon
                 data-icon="inline-end"
                 className={cn('transition-transform', sortAscending && 'rotate-180')}
               />
             </Button>
           </TableHead>
-          <TableHead className="sticky top-0 z-10 w-24 bg-[#fbfcfd]">文件大小</TableHead>
-          <TableHead className="sticky top-0 z-10 hidden w-32 bg-[#fbfcfd] lg:table-cell">修改时间</TableHead>
-          <TableHead className="sticky top-0 z-10 w-10 bg-[#fbfcfd]"><span className="sr-only">操作</span></TableHead>
+          <TableHead className="sticky top-0 z-10 w-24 bg-secondary">{i18n.t('common.fileSize')}</TableHead>
+          <TableHead className="sticky top-0 z-10 hidden w-32 bg-secondary lg:table-cell">{i18n.t('common.modifiedAt')}</TableHead>
+          <TableHead className="sticky top-0 z-10 w-10 bg-secondary"><span className="sr-only">{i18n.t('filesTable.actions')}</span></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -84,13 +85,13 @@ export function FilesTable({
                   onClick={() => onFocus(item.id)}
                   onDoubleClick={() => onOpenFolder(item)}
                   onContextMenu={() => onFocus(item.id)}
-                  className="cursor-pointer data-[state=selected]:bg-[#fffaf5]"
+                  className="cursor-pointer data-[state=selected]:bg-accent"
                 />
               )}
             >
               <TableCell onClick={event => event.stopPropagation()}>
                 <Checkbox
-                  aria-label={`选择 ${item.name}`}
+                  aria-label={i18n.t('dynamic.selectFile', { name: item.name })}
                   checked={selected.includes(item.id)}
                   onCheckedChange={() => onToggleSelected(item)}
                 />
@@ -102,7 +103,7 @@ export function FilesTable({
                     ? (
                         <Button
                           variant="link"
-                          className="min-w-0 p-0 text-[#455366] hover:text-primary"
+                          className="min-w-0 p-0 text-foreground hover:text-primary"
                           onClick={(event) => {
                             event.stopPropagation()
                             onOpenFolder(item)
@@ -124,7 +125,7 @@ export function FilesTable({
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        aria-label={`${item.name} 的更多操作`}
+                        aria-label={i18n.t('dynamic.moreFileActions', { name: item.name })}
                       >
                         <DotsThreeIcon />
                       </Button>

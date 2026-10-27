@@ -1,3 +1,4 @@
+use crate::error::{AppError, ErrorCode};
 use crate::storage::s3::copy::CopyCheckpoint;
 use crate::transfers::model::{TransferTask, UploadConflictAction};
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,8 @@ pub(crate) struct PersistedTask {
     #[serde(default)]
     pub(crate) phase: Option<String>,
     pub(crate) error: Option<String>,
+    #[serde(default)]
+    pub(crate) error_code: Option<String>,
     #[serde(default)]
     pub(crate) total_bytes: Option<u64>,
     #[serde(default)]
@@ -58,6 +61,7 @@ impl From<&TransferTask> for PersistedTask {
             status: task.status.clone(),
             phase: task.phase.clone(),
             error: task.error.clone(),
+            error_code: task.error_code.clone(),
             total_bytes: task.total_bytes,
             transferred_bytes: task.transferred_bytes,
             created_at: task.created_at,
@@ -68,15 +72,21 @@ impl From<&TransferTask> for PersistedTask {
         }
     }
 }
-pub(crate) fn load_tasks(path: &Path) -> Result<Vec<TransferTask>, String> {
+pub(crate) fn load_tasks(path: &Path) -> Result<Vec<TransferTask>, AppError> {
     let backup_path = path.with_extension("json.bak");
     if !path.exists() && backup_path.exists() {
-        fs::rename(&backup_path, path).map_err(|error| format!("无法恢复传输记录：{error}"))?;
+        fs::rename(&backup_path, path).map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferHistoryFailed, error.to_string())
+        })?;
     }
     let tasks: Vec<TransferTask> = if path.exists() {
-        let data = fs::read(path).map_err(|error| format!("无法读取传输记录：{error}"))?;
+        let data = fs::read(path).map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferHistoryFailed, error.to_string())
+        })?;
         serde_json::from_slice::<Vec<PersistedTask>>(&data)
-            .map_err(|error| format!("无法解析传输记录：{error}"))?
+            .map_err(|error| {
+                AppError::with_detail(ErrorCode::TransferHistoryFailed, error.to_string())
+            })?
             .into_iter()
             .map(|task| TransferTask {
                 id: task.id,
@@ -95,6 +105,7 @@ pub(crate) fn load_tasks(path: &Path) -> Result<Vec<TransferTask>, String> {
                 status: task.status,
                 phase: task.phase,
                 error: task.error,
+                error_code: task.error_code,
                 total_bytes: task.total_bytes,
                 transferred_bytes: task.transferred_bytes,
                 created_at: task.created_at,
@@ -110,27 +121,40 @@ pub(crate) fn load_tasks(path: &Path) -> Result<Vec<TransferTask>, String> {
     Ok(tasks)
 }
 
-pub(crate) fn save_tasks(path: &Path, tasks: &[TransferTask]) -> Result<(), String> {
+pub(crate) fn save_tasks(path: &Path, tasks: &[TransferTask]) -> Result<(), AppError> {
     let data =
         serde_json::to_vec_pretty(&tasks.iter().map(PersistedTask::from).collect::<Vec<_>>())
-            .map_err(|error| format!("无法序列化传输记录：{error}"))?;
+            .map_err(|error| {
+                AppError::with_detail(ErrorCode::TransferHistoryFailed, error.to_string())
+            })?;
     let temp_path = path.with_extension("json.tmp");
     let backup_path = path.with_extension("json.bak");
-    fs::write(&temp_path, data).map_err(|error| format!("无法保存传输记录：{error}"))?;
+    fs::write(&temp_path, data).map_err(|error| {
+        AppError::with_detail(ErrorCode::TransferHistoryFailed, error.to_string())
+    })?;
     if backup_path.exists() {
-        fs::remove_file(&backup_path).map_err(|error| format!("无法清理传输记录备份：{error}"))?;
+        fs::remove_file(&backup_path).map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferHistoryFailed, error.to_string())
+        })?;
     }
     if path.exists() {
-        fs::rename(path, &backup_path).map_err(|error| format!("无法备份传输记录：{error}"))?;
+        fs::rename(path, &backup_path).map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferHistoryFailed, error.to_string())
+        })?;
     }
     if let Err(error) = fs::rename(&temp_path, path) {
         if backup_path.exists() {
             let _ = fs::rename(&backup_path, path);
         }
-        return Err(format!("无法更新传输记录：{error}"));
+        return Err(AppError::with_detail(
+            ErrorCode::TransferHistoryFailed,
+            error.to_string(),
+        ));
     }
     if backup_path.exists() {
-        fs::remove_file(&backup_path).map_err(|error| format!("无法清理传输记录备份：{error}"))?;
+        fs::remove_file(&backup_path).map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferHistoryFailed, error.to_string())
+        })?;
     }
     Ok(())
 }
@@ -165,6 +189,7 @@ mod tests {
         assert_eq!(old.destination_connection_id, "");
         assert_eq!(old.destination_bucket, "");
         assert!(old.checkpoint.is_none());
+        assert!(old.error_code.is_none());
         assert_eq!(old.upload_conflict_action, UploadConflictAction::Skip);
 
         let mut move_task = old;
@@ -179,12 +204,14 @@ mod tests {
             size: 42,
         });
         move_task.upload_conflict_action = UploadConflictAction::KeepBoth;
+        move_task.error_code = Some("transferMoveFailed".to_string());
         let restored: PersistedTask =
             serde_json::from_slice(&serde_json::to_vec(&move_task).unwrap()).unwrap();
         assert_eq!(restored.destination_key, "new/file.txt");
         assert_eq!(restored.destination_connection_id, "destination");
         assert_eq!(restored.destination_bucket, "destination-bucket");
         assert_eq!(restored.phase.as_deref(), Some("deleting"));
+        assert_eq!(restored.error_code.as_deref(), Some("transferMoveFailed"));
         assert_eq!(
             restored.upload_conflict_action,
             UploadConflictAction::KeepBoth

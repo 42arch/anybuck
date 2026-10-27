@@ -1,16 +1,17 @@
 use crate::connection::manager::{PreparedConnection, new_connection_id};
 use crate::connection::model::{ConnectStorageRequest, SavedStorageConnection, StorageProvider};
+use crate::error::{AppError, ErrorCode};
 use aws_sdk_s3::{Client, config::Credentials};
 
 pub(crate) async fn prepare_connection(
     request: &ConnectStorageRequest,
-) -> Result<PreparedConnection, String> {
+) -> Result<PreparedConnection, AppError> {
     let region = request.region.trim();
     let bucket = request.bucket.trim();
     let access_key_id = request.access_key_id.trim();
     let secret_access_key = request.secret_access_key.trim();
     if access_key_id.is_empty() || secret_access_key.is_empty() {
-        return Err("请填写腾讯云 SecretId 和 SecretKey。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidCredentials).param("provider", "COS"));
     }
     let endpoint = cos_endpoint(region, bucket, request.endpoint.as_deref())?;
     let credentials = Credentials::new(
@@ -56,7 +57,7 @@ pub(crate) async fn prepare_connection(
     })
 }
 
-fn cos_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<String, String> {
+fn cos_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<String, AppError> {
     if region.is_empty()
         || !region
             .bytes()
@@ -64,20 +65,18 @@ fn cos_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<S
         || region.starts_with('-')
         || region.ends_with('-')
     {
-        return Err("请填写有效的 COS 地域，例如 ap-guangzhou。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidRegion).param("provider", "COS"));
     }
     let valid_bucket = bucket.rsplit_once('-').is_some_and(|(name, app_id)| {
         !name.is_empty() && app_id.len() >= 5 && app_id.bytes().all(|byte| byte.is_ascii_digit())
     });
     if !valid_bucket {
-        return Err(
-            "COS Bucket 应填写包含 APPID 的完整名称，例如 examplebucket-1250000000。".to_string(),
-        );
+        return Err(AppError::new(ErrorCode::ConnectionInvalidBucket).param("provider", "COS"));
     }
     let endpoint = format!("https://cos.{region}.myqcloud.com");
     let requested = requested.unwrap_or_default().trim().trim_end_matches('/');
     if !requested.is_empty() && requested != endpoint {
-        return Err("COS Endpoint 必须与所选地域一致。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidEndpoint).param("provider", "COS"));
     }
     Ok(endpoint)
 }

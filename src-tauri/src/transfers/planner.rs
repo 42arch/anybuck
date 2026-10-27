@@ -1,4 +1,5 @@
 use crate::connection::manager::{StorageConnectionState, client_for_connection};
+use crate::error::{AppError, ErrorCode};
 use crate::transfers::manager::TransferManager;
 use crate::transfers::model::{DownloadPlanSummary, TransferTask, make_id, new_task};
 use std::{
@@ -31,16 +32,18 @@ pub(crate) async fn prepare_download(
     destination_path: String,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
-) -> Result<DownloadPlanSummary, String> {
+) -> Result<DownloadPlanSummary, AppError> {
     if keys.is_empty() {
-        return Err("请先选择要下载的文件或文件夹。".to_string());
+        return Err(AppError::new(ErrorCode::TransferInvalidDestination));
     }
     let (client, bucket) = client_for_connection(&connection_id, connections.inner())?;
     let root = PathBuf::from(destination_path)
         .canonicalize()
-        .map_err(|error| format!("无法访问所选下载目录：{error}"))?;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
     if !root.is_dir() {
-        return Err("所选下载位置不是目录。".to_string());
+        return Err(AppError::new(ErrorCode::TransferInvalidDestination));
     }
     let normalized_prefix = if prefix.trim_matches('/').is_empty() {
         String::new()
@@ -51,14 +54,14 @@ pub(crate) async fn prepare_download(
     let mut files = HashMap::<String, PlannedDownload>::new();
     for key in keys {
         if !key.starts_with(&normalized_prefix) {
-            return Err("所选对象不属于当前目录。".to_string());
+            return Err(AppError::new(ErrorCode::TransferInvalidDestination));
         }
         let parent_id = if key.ends_with('/') {
             let folder_name = key
                 .trim_end_matches('/')
                 .rsplit('/')
                 .next()
-                .unwrap_or("文件夹");
+                .unwrap_or("Folder");
             let parent = new_task(
                 None,
                 "folder",
@@ -81,10 +84,9 @@ pub(crate) async fn prepare_download(
                 if let Some(value) = token.as_deref() {
                     request = request.continuation_token(value);
                 }
-                let page = request
-                    .send()
-                    .await
-                    .map_err(|error| format!("读取文件夹失败：{error}"))?;
+                let page = request.send().await.map_err(|error| {
+                    AppError::with_detail(ErrorCode::TransferLocalReadFailed, error.to_string())
+                })?;
                 for object in page.contents() {
                     let Some(object_key) = object.key().filter(|value| !value.ends_with('/'))
                     else {
@@ -118,7 +120,7 @@ pub(crate) async fn prepare_download(
         if !key.ends_with('/') {
             let relative = key
                 .strip_prefix(&normalized_prefix)
-                .ok_or_else(|| "所选对象不属于当前目录。".to_string())?;
+                .ok_or_else(|| AppError::new(ErrorCode::TransferInvalidDestination))?;
             let name = relative.rsplit('/').next().unwrap_or(relative).to_string();
             let local = safe_local_path(&root, relative)?;
             files.insert(
@@ -144,7 +146,7 @@ pub(crate) async fn prepare_download(
         .inner
         .plans
         .lock()
-        .map_err(|_| "传输状态不可用。".to_string())?
+        .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?
         .insert(
             plan_id.clone(),
             DownloadPlan {
@@ -163,7 +165,7 @@ pub(crate) async fn prepare_download(
     Ok(summary)
 }
 
-fn safe_local_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
+fn safe_local_path(root: &Path, relative: &str) -> Result<PathBuf, AppError> {
     let mut path = root.to_path_buf();
     for component in relative.trim_end_matches('/').split('/') {
         if component.is_empty()
@@ -171,12 +173,12 @@ fn safe_local_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
             || component == ".."
             || component.chars().any(|ch| matches!(ch, '\\' | ':' | '\0'))
         {
-            return Err("对象 Key 包含不安全的本地路径。".to_string());
+            return Err(AppError::new(ErrorCode::TransferUnsafePath));
         }
         path.push(component);
     }
     if !path.starts_with(root) {
-        return Err("对象 Key 指向下载目录之外的路径。".to_string());
+        return Err(AppError::new(ErrorCode::TransferUnsafePath));
     }
     Ok(path)
 }

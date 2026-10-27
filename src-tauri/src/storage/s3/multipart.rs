@@ -1,13 +1,14 @@
+use crate::error::{AppError, ErrorCode};
 use aws_sdk_s3::Client;
 
 pub(super) const MULTIPART_THRESHOLD: u64 = 100 * 1024 * 1024;
 pub(super) const PART_SIZE: u64 = 16 * 1024 * 1024;
 
-pub(super) fn multipart_part_size(size: u64) -> Result<u64, String> {
+pub(super) fn multipart_part_size(size: u64) -> Result<u64, AppError> {
     let required = size.div_ceil(10_000).div_ceil(1024 * 1024) * 1024 * 1024;
     let part_size = required.clamp(PART_SIZE, 64 * 1024 * 1024);
     if size.div_ceil(part_size) > 10_000 {
-        return Err("对象超过当前分片上传上限。".to_string());
+        return Err(AppError::new(ErrorCode::TransferLimitExceeded));
     }
     Ok(part_size)
 }

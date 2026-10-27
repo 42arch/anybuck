@@ -1,6 +1,7 @@
 import type { FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { errorMessage } from '@/api/invoke'
 import { createFolder } from '@/api/objects'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,6 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
+import i18n from '@/i18n'
 import { showNotice } from '@/lib/notice'
 
 interface CreateFolderDialogProps {
@@ -61,23 +63,23 @@ export function CreateFolderDialog({
     event.preventDefault()
     const name = folderName.trim()
     if (!name) {
-      setError('请输入文件夹名称。')
+      setError(i18n.t('createFolder.enterFolderName'))
       return
     }
     if (!connectionId) {
-      setError('请先连接存储桶。')
+      setError(i18n.t('createFolder.connectBucketFirst'))
       return
     }
     setError('')
     try {
       await createFolderMutation.mutateAsync({ connectionId, prefix: path, name })
-      showNotice(`文件夹“${name}”已创建。`)
+      showNotice(i18n.t('dynamic.folderCreated', { name }))
       setFolderName('')
       onSuccess?.()
       onOpenChange(false)
     }
     catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorMessage(cause))
     }
   }
 
@@ -86,19 +88,15 @@ export function CreateFolderDialog({
       <DialogContent>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>在当前目录新建文件夹</DialogTitle>
+            <DialogTitle>{i18n.t('createFolder.createFolderCurrentFolder')}</DialogTitle>
             <DialogDescription>
-              将在
-              {' '}
-              {path ? `${path}/` : `${bucketName}/`}
-              {' '}
-              下创建文件夹。
+              {i18n.t('dynamic.createFolderUnder', { path: path ? `${path}/` : `${bucketName}/` })}
             </DialogDescription>
           </DialogHeader>
           <Input
             autoFocus
-            aria-label="文件夹名称"
-            placeholder="文件夹名称"
+            aria-label={i18n.t('createFolder.folderName')}
+            placeholder={i18n.t('createFolder.folderName')}
             value={folderName}
             onChange={event => setFolderName(event.target.value)}
             disabled={isPending}
@@ -111,11 +109,11 @@ export function CreateFolderDialog({
               disabled={isPending}
               onClick={() => handleOpenChange(false)}
             >
-              取消
+              {i18n.t('common.cancel')}
             </Button>
             <Button type="submit" disabled={isPending || !folderName.trim()}>
               {isPending && <Spinner data-icon="inline-start" />}
-              {isPending ? '正在创建…' : '创建文件夹'}
+              {isPending ? i18n.t('createFolder.creating') : i18n.t('createFolder.createFolder')}
             </Button>
           </DialogFooter>
         </form>

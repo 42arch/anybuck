@@ -1,12 +1,14 @@
 import type { FormEvent } from 'react'
 import type { StorageConnectionEntry } from '@/types/connection'
 import { useState } from 'react'
+import { errorMessage } from '@/api/invoke'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { useStorageConnection } from '@/hooks/use-storage-connection'
+import i18n from '@/i18n'
 import { showNotice } from '@/lib/notice'
 
 interface RenameConnectionDialogProps {
@@ -24,7 +26,7 @@ export function RenameConnectionDialog({ connection, onClose }: RenameConnection
     event.preventDefault()
     const trimmedName = name.trim()
     if (!trimmedName) {
-      setError('请输入连接名称。')
+      setError(i18n.t('connectionDialog.enterConnectionName'))
       return
     }
     if (trimmedName === connection.name) {
@@ -35,11 +37,11 @@ export function RenameConnectionDialog({ connection, onClose }: RenameConnection
     setError('')
     try {
       await renameConnection(connection.connectionId, trimmedName)
-      showNotice(`连接已重命名为“${trimmedName}”。`)
+      showNotice(i18n.t('dynamic.connectionRenamed', { name: trimmedName }))
       onClose()
     }
     catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorMessage(cause))
     }
     finally {
       setIsSaving(false)
@@ -57,11 +59,11 @@ export function RenameConnectionDialog({ connection, onClose }: RenameConnection
       <DialogContent>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>重命名连接</DialogTitle>
-            <DialogDescription>更改侧边栏中的连接名称，不会修改 Bucket 或访问凭证。</DialogDescription>
+            <DialogTitle>{i18n.t('connectionDialog.renameConnection')}</DialogTitle>
+            <DialogDescription>{i18n.t('connectionDialog.changeConnectionNameShownSidebar')}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="rename-connection-name">连接名称</Label>
+            <Label htmlFor="rename-connection-name">{i18n.t('connections.name')}</Label>
             <Input
               id="rename-connection-name"
               autoFocus
@@ -75,10 +77,10 @@ export function RenameConnectionDialog({ connection, onClose }: RenameConnection
           </div>
           {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
           <DialogFooter>
-            <Button type="button" variant="outline" disabled={isSaving} onClick={onClose}>取消</Button>
+            <Button type="button" variant="outline" disabled={isSaving} onClick={onClose}>{i18n.t('common.cancel')}</Button>
             <Button type="submit" disabled={isSaving || !name.trim()}>
               {isSaving && <Spinner data-icon="inline-start" />}
-              保存
+              {i18n.t('common.save')}
             </Button>
           </DialogFooter>
         </form>

@@ -2,7 +2,9 @@ import type { Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { check } from '@tauri-apps/plugin-updater'
 import { create } from 'zustand'
+import { errorMessage } from '@/api/invoke'
 import { listTransferTasks } from '@/api/transfers'
+import i18n from '@/i18n'
 
 type UpdatePhase = 'idle' | 'preparing' | 'downloading' | 'ready' | 'installing' | 'restart'
 
@@ -23,10 +25,6 @@ async function hasPendingTransfers() {
   return tasks.some(task => task.status === 'queued' || task.status === 'running')
 }
 
-function errorMessage(cause: unknown) {
-  return cause instanceof Error ? cause.message : String(cause)
-}
-
 export const useAppUpdateStore = create<AppUpdateState>((set, get) => ({
   phase: 'idle',
   downloadedBytes: 0,
@@ -40,14 +38,14 @@ export const useAppUpdateStore = create<AppUpdateState>((set, get) => ({
     set({ phase: 'preparing', error: null })
     try {
       if (await hasPendingTransfers()) {
-        set({ phase: 'idle', error: '仍有排队或运行中的传输任务，请在任务完成后安装更新。' })
+        set({ phase: 'idle', error: i18n.t('workflow.pendingTransfers') })
         return
       }
 
       set({ phase: 'downloading', downloadedBytes: 0, totalBytes: null, error: null })
       const update = await check()
       if (!update) {
-        set({ phase: 'idle', error: '当前没有可安装的更新，请重新检查。' })
+        set({ phase: 'idle', error: i18n.t('workflow.noUpdateReady') })
         return
       }
 
@@ -69,7 +67,7 @@ export const useAppUpdateStore = create<AppUpdateState>((set, get) => ({
       await get().installUpdate()
     }
     catch (cause) {
-      set({ phase: 'idle', error: `无法下载更新：${errorMessage(cause)}` })
+      set({ phase: 'idle', error: i18n.t('workflow.updateDownloadFailed', { message: errorMessage(cause) }) })
     }
   },
 
@@ -80,7 +78,7 @@ export const useAppUpdateStore = create<AppUpdateState>((set, get) => ({
     set({ phase: 'installing', error: null })
     try {
       if (await hasPendingTransfers()) {
-        set({ phase: 'ready', error: '下载已完成，但仍有排队或运行中的传输任务。请在任务完成后点击安装。' })
+        set({ phase: 'ready', error: i18n.t('workflow.downloadCompletePendingTransfers') })
         return
       }
 
@@ -90,7 +88,7 @@ export const useAppUpdateStore = create<AppUpdateState>((set, get) => ({
       await get().restartApp()
     }
     catch (cause) {
-      set({ phase: downloadedUpdate ? 'ready' : 'restart', error: `无法安装更新：${errorMessage(cause)}` })
+      set({ phase: downloadedUpdate ? 'ready' : 'restart', error: i18n.t('workflow.updateInstallFailed', { message: errorMessage(cause) }) })
     }
   },
 
@@ -103,7 +101,7 @@ export const useAppUpdateStore = create<AppUpdateState>((set, get) => ({
       await relaunch()
     }
     catch (cause) {
-      set({ error: `无法重启应用：${errorMessage(cause)}` })
+      set({ error: i18n.t('workflow.updateRestartFailed', { message: errorMessage(cause) }) })
     }
   },
 }))

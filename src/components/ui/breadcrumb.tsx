@@ -3,11 +3,12 @@ import { useRender } from '@base-ui/react/use-render'
 import { CaretRightIcon, DotsThreeIcon } from '@phosphor-icons/react'
 import { cn } from 'cn'
 import * as React from 'react'
+import i18n from '@/i18n'
 
 function Breadcrumb({ className, ...props }: React.ComponentProps<'nav'>) {
   return (
     <nav
-      aria-label="breadcrumb"
+      aria-label={i18n.t('common.breadcrumb')}
       data-slot="breadcrumb"
       className={cn(className)}
       {...props}
@@ -107,7 +108,7 @@ function BreadcrumbEllipsis({
       {...props}
     >
       <DotsThreeIcon />
-      <span className="sr-only">More</span>
+      <span className="sr-only">{i18n.t('common.more')}</span>
     </span>
   )
 }

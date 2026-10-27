@@ -7,11 +7,13 @@ import {
   CopyIcon,
   FolderIcon,
 } from '@phosphor-icons/react'
+import { errorMessage, taskErrorMessage } from '@/api/invoke'
 import { retryTransferTask } from '@/api/transfers'
 import { Button } from '@/components/ui/button'
+import i18n from '@/i18n'
 import { formatBytes } from '@/lib/format-bytes'
 import { showNotice } from '@/lib/notice'
-import { formatTaskTarget, statusLabels, taskPercent, terminalStatuses } from './utils'
+import { formatTaskTarget, statusLabel, taskPercent, terminalStatuses } from './utils'
 
 export interface HistoryTaskCardProps {
   task: TransferTask
@@ -36,7 +38,7 @@ function getHistoryMetrics(task: TransferTask, childrenTasks: TransferTask[]) {
     if (task.totalBytes !== null && task.totalBytes > 0)
       sizeText = formatBytes(task.totalBytes, 1)
     else
-      sizeText = `${processedChildren}/${childrenTasks.length} 个${isCopy || isMove ? '对象' : task.operation === 'upload-folder' ? '项目' : '文件'}`
+      sizeText = i18n.t('dynamic.childrenCount', { processed: processedChildren, total: childrenTasks.length, kind: isCopy || isMove ? i18n.t('transferUnit.objects') : task.operation === 'upload-folder' ? i18n.t('transferUnit.items') : i18n.t('transferUnit.files') })
   }
   else {
     if (task.status === 'completed') {
@@ -80,7 +82,7 @@ export function HistoryTaskCard({ task, childrenTasks = [], onNotice }: HistoryT
         (onNotice ?? showNotice)(success)
     }
     catch (cause) {
-      (onNotice ?? showNotice)(cause instanceof Error ? cause.message : String(cause))
+      (onNotice ?? showNotice)(errorMessage(cause))
     }
   }
 
@@ -101,7 +103,7 @@ export function HistoryTaskCard({ task, childrenTasks = [], onNotice }: HistoryT
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-medium" title={task.displayName}>{task.displayName}</span>
-            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{statusLabels[task.status]}</span>
+            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{statusLabel(task.status)}</span>
           </div>
           <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
             {sizeText && <span>{sizeText}</span>}
@@ -110,8 +112,8 @@ export function HistoryTaskCard({ task, childrenTasks = [], onNotice }: HistoryT
               <Button
                 size="icon-sm"
                 variant="ghost"
-                aria-label="重试任务"
-                onClick={() => void handleAction(() => retryTransferTask(task.id), '任务已重新排队。')}
+                aria-label={i18n.t('transfers.retryTask')}
+                onClick={() => void handleAction(() => retryTransferTask(task.id), i18n.t('transfers.taskQueuedAgain'))}
               >
                 <ArrowClockwiseIcon />
               </Button>
@@ -124,13 +126,13 @@ export function HistoryTaskCard({ task, childrenTasks = [], onNotice }: HistoryT
         >
           {formatTaskTarget(task)}
         </span>
-        {task.error && <span className="text-xs text-destructive">{task.error}</span>}
+        {(task.error || task.errorCode) && <span className="text-xs text-destructive" title={task.error ?? undefined}>{taskErrorMessage(task)}</span>}
         {childrenTasks.length > 0 && (
           <details open={false} className="mt-1">
             <summary className="cursor-pointer text-xs text-muted-foreground">
               {childrenTasks.length}
               {' '}
-              个对象任务
+              {i18n.t('transfers.objectTasks')}
             </summary>
             <div className="mt-1 border-l pl-2">
               {childrenTasks.map(child => (

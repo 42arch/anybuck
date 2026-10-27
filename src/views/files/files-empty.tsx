@@ -2,6 +2,7 @@ import { CloudArrowUpIcon, MagnifyingGlassIcon } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Spinner } from '@/components/ui/spinner'
+import i18n from '@/i18n'
 
 interface FilesEmptyProps {
   isLoading: boolean
@@ -26,29 +27,29 @@ export function FilesEmpty({
         </EmptyMedia>
         <EmptyTitle>
           {isLoading
-            ? '正在读取对象…'
+            ? i18n.t('filesEmpty.loadingObjects')
             : loadError
-              ? '对象列表读取失败'
+              ? i18n.t('filesEmpty.loadObjectsFailed')
               : !hasRemoteConnection
-                  ? '尚未连接存储桶'
+                  ? i18n.t('common.noBucketConnected')
                   : search
-                    ? '没有找到匹配的文件'
-                    : 'Bucket 暂无对象'}
+                    ? i18n.t('filesEmpty.noMatchingFiles')
+                    : i18n.t('filesEmpty.bucketEmpty')}
         </EmptyTitle>
         <EmptyDescription>
           {isLoading
-            ? '正在读取当前目录。'
+            ? i18n.t('filesEmpty.loadingCurrentFolder')
             : loadError
-              ? '请检查连接配置或网络后重试。'
+              ? i18n.t('filesEmpty.checkConnectionSettingsNetworkTry')
               : !hasRemoteConnection
-                  ? '连接存储桶后即可浏览对象。'
+                  ? i18n.t('filesEmpty.connectBucketBrowseObjects')
                   : search
-                    ? '试试其他搜索词'
-                    : '这个 Bucket 或目录当前没有对象。'}
+                    ? i18n.t('filesEmpty.tryAnotherSearchTerm')
+                    : i18n.t('filesEmpty.bucketFolderEmpty')}
         </EmptyDescription>
       </EmptyHeader>
       {!hasRemoteConnection && !isLoading && (
-        <Button onClick={onConnect}>添加并连接存储桶</Button>
+        <Button onClick={onConnect}>{i18n.t('filesEmpty.addConnectBucket')}</Button>
       )}
     </Empty>
   )

@@ -9,12 +9,14 @@ import {
   SpinnerIcon,
   XIcon,
 } from '@phosphor-icons/react'
+import { errorMessage, taskErrorMessage } from '@/api/invoke'
 import { cancelTransferTask, retryTransferTask } from '@/api/transfers'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
+import i18n from '@/i18n'
 import { formatBytes } from '@/lib/format-bytes'
 import { showNotice } from '@/lib/notice'
-import { formatTaskTarget, statusLabels, taskPercent, terminalStatuses } from './utils'
+import { formatTaskTarget, statusLabel, taskPercent, terminalStatuses } from './utils'
 
 export interface ActiveTaskCardProps {
   task: TransferTask
@@ -33,13 +35,13 @@ export function ActiveTaskCard({ task, childrenTasks = [], onNotice }: ActiveTas
   const processedChildren = childrenTasks.filter(child => terminalStatuses.has(child.status)).length
   const phaseLabel = task.status === 'running' && (isCopy || isMove)
     ? task.phase === 'deleting'
-      ? '正在删除源对象'
+      ? i18n.t('transferPhase.deletingSource')
       : task.phase === 'downloading'
-        ? '正在读取源对象'
+        ? i18n.t('transferPhase.readingSource')
         : task.phase === 'uploading'
-          ? '正在上传目标对象'
-          : task.phase === 'verifying' ? '正在验证目标对象' : '正在复制'
-    : statusLabels[task.status]
+          ? i18n.t('transferPhase.uploadingDestination')
+          : task.phase === 'verifying' ? i18n.t('transferPhase.verifyingDestination') : i18n.t('activeTask.copying')
+    : statusLabel(task.status)
 
   async function handleAction(action: () => Promise<unknown>, success: string) {
     try {
@@ -48,7 +50,7 @@ export function ActiveTaskCard({ task, childrenTasks = [], onNotice }: ActiveTas
         (onNotice ?? showNotice)(success)
     }
     catch (cause) {
-      (onNotice ?? showNotice)(cause instanceof Error ? cause.message : String(cause))
+      (onNotice ?? showNotice)(errorMessage(cause))
     }
   }
 
@@ -81,28 +83,28 @@ export function ActiveTaskCard({ task, childrenTasks = [], onNotice }: ActiveTas
         {isParent && childrenTasks.length > 0 && (
           <div className="flex flex-col gap-1">
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{`${processedChildren} / ${childrenTasks.length} 个${isCopy || isMove ? '对象' : task.operation === 'upload-folder' ? '项目' : '文件'}已处理`}</span>
+              <span>{i18n.t('dynamic.childrenProcessed', { processed: processedChildren, total: childrenTasks.length, kind: isCopy || isMove ? i18n.t('transferUnit.objects') : task.operation === 'upload-folder' ? i18n.t('transferUnit.items') : i18n.t('transferUnit.files') })}</span>
               <span>{`${Math.round(processedChildren / childrenTasks.length * 100)}%`}</span>
             </div>
-            <Progress value={processedChildren / childrenTasks.length * 100} aria-label={`${task.displayName} 任务进度`} />
+            <Progress value={processedChildren / childrenTasks.length * 100} aria-label={i18n.t('dynamic.taskProgress', { name: task.displayName })} />
           </div>
         )}
         {!isParent && task.status !== 'queued' && task.status !== 'skipped' && (task.totalBytes !== null || task.transferredBytes > 0) && (
           <div className="flex flex-col gap-1">
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>{`${formatBytes(task.transferredBytes, 1)}${task.totalBytes !== null ? ` / ${formatBytes(task.totalBytes, 1)}` : ''}`}</span>
-              <span>{percent !== null ? `${percent}%` : '大小未知'}</span>
+              <span>{percent !== null ? `${percent}%` : i18n.t('activeTask.sizeUnknown')}</span>
             </div>
-            {percent !== null && <Progress value={percent} aria-label={`${task.displayName} 传输进度`} />}
+            {percent !== null && <Progress value={percent} aria-label={i18n.t('dynamic.transferProgress', { name: task.displayName })} />}
           </div>
         )}
-        {task.error && <span className="text-xs text-destructive">{task.error}</span>}
+        {(task.error || task.errorCode) && <span className="text-xs text-destructive" title={task.error ?? undefined}>{taskErrorMessage(task)}</span>}
         {childrenTasks.length > 0 && (
           <details open={!terminalStatuses.has(task.status)} className="mt-1">
             <summary className="cursor-pointer text-xs text-muted-foreground">
               {childrenTasks.length}
               {' '}
-              个对象任务
+              {i18n.t('transfers.objectTasks')}
             </summary>
             <div className="mt-1 border-l pl-2">
               {childrenTasks.map(child => (
@@ -117,8 +119,8 @@ export function ActiveTaskCard({ task, childrenTasks = [], onNotice }: ActiveTas
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="取消任务"
-            onClick={() => void handleAction(() => cancelTransferTask(task.id), '任务已取消。')}
+            aria-label={i18n.t('activeTask.cancelTask')}
+            onClick={() => void handleAction(() => cancelTransferTask(task.id), i18n.t('activeTask.taskCancelled'))}
           >
             <XIcon />
           </Button>
@@ -127,8 +129,8 @@ export function ActiveTaskCard({ task, childrenTasks = [], onNotice }: ActiveTas
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="重试任务"
-            onClick={() => void handleAction(() => retryTransferTask(task.id), '任务已重新排队。')}
+            aria-label={i18n.t('transfers.retryTask')}
+            onClick={() => void handleAction(() => retryTransferTask(task.id), i18n.t('transfers.taskQueuedAgain'))}
           >
             <ArrowClockwiseIcon />
           </Button>

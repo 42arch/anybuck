@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/pagination'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import i18n from '@/i18n'
 import { cn } from '@/lib/utils'
 
 interface FilesPaginationProps {
@@ -57,18 +58,18 @@ export function FilesPagination({
       <div className="flex min-w-0 items-center gap-2">
         <span className="truncate">
           {!hasRemoteConnection
-            ? '尚未连接存储桶'
+            ? i18n.t('common.noBucketConnected')
             : isCounting
-              ? '正在统计对象数量…'
+              ? i18n.t('filesPagination.countingObjects')
               : countError
-                ? '对象总数获取失败'
+                ? i18n.t('filesPagination.countObjectsFailed')
                 : displayMode === 'infinite'
-                  ? `已加载 ${loadedCount} / ${totalCount ?? 0} 个项目`
-                  : `共 ${totalCount ?? 0} 个项目`}
+                  ? i18n.t('dynamic.pageLoaded', { loaded: loadedCount, total: totalCount ?? 0 })
+                  : i18n.t('dynamic.pageTotal', { total: totalCount ?? 0, count: totalCount ?? 0 })}
         </span>
         {countError && (
           <Button variant="link" size="sm" className="h-auto shrink-0 p-0" onClick={onRetryCount}>
-            重试
+            {i18n.t('common.retry')}
           </Button>
         )}
       </div>
@@ -81,7 +82,7 @@ export function FilesPagination({
                     <PaginationItem>
                       <PaginationPrevious
                         href="#"
-                        text="上一页"
+                        text={i18n.t('filesPagination.previousPage')}
                         aria-disabled={!canGoToPreviousPage || isLoadingPage}
                         className={cn((!canGoToPreviousPage || isLoadingPage) && 'pointer-events-none opacity-50')}
                         onClick={(event) => {
@@ -102,7 +103,7 @@ export function FilesPagination({
                             <PaginationLink
                               href="#"
                               isActive={page === currentPage}
-                              aria-label={`第 ${page} 页`}
+                              aria-label={i18n.t('dynamic.pageNumber', { page })}
                               aria-current={page === currentPage ? 'page' : undefined}
                               aria-disabled={isLoadingPage}
                               className={cn(isLoadingPage && 'pointer-events-none opacity-50')}
@@ -120,7 +121,7 @@ export function FilesPagination({
                     <PaginationItem>
                       <PaginationNext
                         href="#"
-                        text="下一页"
+                        text={i18n.t('filesPagination.nextPage')}
                         aria-disabled={!canGoToNextPage || isLoadingPage}
                         className={cn((!canGoToNextPage || isLoadingPage) && 'pointer-events-none opacity-50')}
                         onClick={(event) => {
@@ -136,7 +137,7 @@ export function FilesPagination({
             : (
                 <Button variant="outline" size="sm" disabled={!hasNextPage || isLoadingPage} onClick={onLoadMore}>
                   {isLoadingPage && <Spinner data-icon="inline-start" />}
-                  {isLoadingPage ? '正在加载…' : hasNextPage ? '加载更多' : '已加载全部'}
+                  {isLoadingPage ? i18n.t('shared.loading') : hasNextPage ? i18n.t('filesPagination.loadMore') : i18n.t('filesPagination.itemsLoaded')}
                 </Button>
               )}
           <Tooltip>
@@ -145,7 +146,7 @@ export function FilesPagination({
                 <Button
                   variant="outline"
                   size="icon-sm"
-                  aria-label={displayMode === 'pagination' ? '切换到无限加载模式' : '切换到分页模式'}
+                  aria-label={displayMode === 'pagination' ? i18n.t('filesPagination.switchInfiniteLoading') : i18n.t('filesPagination.switchPaginatedView')}
                   aria-pressed={displayMode === 'infinite'}
                   onClick={() => onDisplayModeChange(displayMode === 'pagination' ? 'infinite' : 'pagination')}
                 >
@@ -154,7 +155,7 @@ export function FilesPagination({
               )}
             />
             <TooltipContent>
-              {displayMode === 'pagination' ? '切换到无限加载模式' : '切换到分页模式'}
+              {displayMode === 'pagination' ? i18n.t('filesPagination.switchInfiniteLoading') : i18n.t('filesPagination.switchPaginatedView')}
             </TooltipContent>
           </Tooltip>
         </div>

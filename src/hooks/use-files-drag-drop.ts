@@ -2,6 +2,8 @@ import { isTauri } from '@tauri-apps/api/core'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useEffect, useRef, useState } from 'react'
+import { errorMessage } from '@/api/invoke'
+import i18n from '@/i18n'
 import { showNotice } from '@/lib/notice'
 import { useFileTransferStore } from '@/store/file-transfer-store'
 
@@ -54,7 +56,7 @@ export function useFilesDragDrop({ enabled, path }: UseFilesDragDropOptions) {
     })().catch((error: unknown) => {
       setDragOver(false)
       if (!disposed)
-        showNotice(`无法启用拖拽上传：${error instanceof Error ? error.message : String(error)}`)
+        showNotice(i18n.t('workflow.dragDropFailed', { message: errorMessage(error) }))
     })
 
     return () => {

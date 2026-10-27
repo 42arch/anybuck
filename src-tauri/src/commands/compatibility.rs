@@ -1,4 +1,5 @@
 use crate::connection::manager::{StorageConnectionState, client_for_connection};
+use crate::error::AppError;
 use crate::storage::s3::compatibility::{self, ProbeMode, ProbeReport};
 use tauri::State;
 
@@ -7,7 +8,7 @@ pub(crate) async fn run_compatibility_probe(
     connection_id: String,
     mode: ProbeMode,
     state: State<'_, StorageConnectionState>,
-) -> Result<ProbeReport, String> {
+) -> Result<ProbeReport, AppError> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     Ok(compatibility::run_probe(client, bucket, connection_id, mode).await)
 }

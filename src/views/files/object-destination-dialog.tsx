@@ -1,13 +1,16 @@
 import type { StorageItem } from '@/types/storage'
-import { ArrowLeftIcon, FolderIcon, HouseIcon, SpinnerGapIcon } from '@phosphor-icons/react'
+import { ArrowLeftIcon, CaretDownIcon, FolderIcon, HouseIcon, SpinnerGapIcon } from '@phosphor-icons/react'
 import { useInfiniteQuery, useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
+import { errorMessage } from '@/api/invoke'
 import { listObjects } from '@/api/objects'
 import { enqueueObjectOperation } from '@/api/transfers'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import i18n from '@/i18n'
 import { formatBytes } from '@/lib/format-bytes'
 import { showNotice } from '@/lib/notice'
 import { useConnectionStore } from '@/store/connection-store'
@@ -42,7 +45,7 @@ export function ObjectDestinationDialog({
     && sourceConnection.endpoint.replace(/\/+$/, '').toLowerCase() === targetConnection.endpoint.replace(/\/+$/, '').toLowerCase())
   const hasFolder = items.some(item => item.kind === 'folder')
   const knownBytes = items.reduce((total, item) => total + (item.sizeBytes ?? 0), 0)
-  const action = operation === 'move' ? '移动' : '复制'
+  const action = operation === 'move' ? i18n.t('common.move') : i18n.t('common.copy')
 
   const operationMutation = useMutation({
     mutationFn: ({ connectionId, destinationConnectionId, keys, destinationPrefix, operation }: {
@@ -65,7 +68,7 @@ export function ObjectDestinationDialog({
   })
   const canBrowse = Boolean(targetConnection)
   const directories = directoriesQuery.data?.pages.flatMap(page => page.objects.filter(object => object.kind === 'directory')) ?? []
-  const destinationLabel = destination || '存储桶根目录'
+  const destinationLabel = destination || i18n.t('filesToolbar.bucketRoot')
   const invalidDestination = sameBucket && items.some((item) => {
     const target = `${destination ? `${destination}/` : ''}${item.name}${item.kind === 'folder' ? '/' : ''}`
     return target === item.id || (item.kind === 'folder' && target.startsWith(item.id))
@@ -84,12 +87,12 @@ export function ObjectDestinationDialog({
       })
       const failed = tasks.filter(task => task.parentId === null && task.status === 'failed').length
       if (failed > 0)
-        showNotice(`${failed} 个项目无法${action}，请在任务中心查看原因。`)
+        showNotice(i18n.t('dynamic.operationPartialFailure', { count: failed, action: action.toLowerCase() }))
       onSuccess?.()
       onOpenChange(false)
     }
     catch (cause) {
-      showNotice(`${action}失败：${cause instanceof Error ? cause.message : String(cause)}`)
+      showNotice(i18n.t('dynamic.operationFailed', { action, message: errorMessage(cause) }))
     }
   }
 
@@ -98,54 +101,50 @@ export function ObjectDestinationDialog({
       <DialogContent className="sm:max-w-md" showCloseButton={!isPending}>
         <DialogHeader>
           <DialogTitle>
-            {action}
-            所选项目
+            {i18n.t('dynamic.destinationTitle', { action })}
           </DialogTitle>
           <DialogDescription>
-            {confirmCrossConnection ? '确认跨连接操作。' : '选择目标连接和文件夹。将'}
-            {action}
-            {' '}
-            {items.length}
-            {' '}
-            个项目；已存在的同名项目不会被覆盖。
+            {i18n.t(confirmCrossConnection ? 'dynamic.crossDestinationDescription' : 'dynamic.destinationDescription', { action, count: items.length })}
           </DialogDescription>
         </DialogHeader>
         {confirmCrossConnection
           ? (
               <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3 text-sm">
                 <p>
-                  {sourceConnection?.name ?? '源连接'}
+                  {sourceConnection?.name ?? i18n.t('destinationDialog.sourceConnection')}
                   {' '}
                   →
                   {' '}
-                  {targetConnection?.name ?? '目标连接'}
+                  {targetConnection?.name ?? i18n.t('destinationDialog.destinationConnection')}
                 </p>
                 <p>
-                  目标位置：
+                  {i18n.t('destinationDialog.destination')}
                   {targetConnection?.bucket}
                   /
-                  {destination || '根目录'}
+                  {destination || i18n.t('destinationDialog.rootFolder')}
                 </p>
                 <p>
-                  所选项目：
-                  {items.length}
-                  {' '}
-                  个；已知大小
-                  {' '}
-                  {formatBytes(knownBytes, 1)}
-                  {hasFolder ? '（文件夹内容将在入队时枚举）' : ''}
+                  {i18n.t('dynamic.destinationSummary', { count: items.length, size: formatBytes(knownBytes, 1) })}
+                  {hasFolder ? i18n.t('destinationDialog.folderContentsListedTaskQueued') : ''}
                 </p>
-                <p className="text-muted-foreground">
-                  文件会经本机下载并上传，最多可能占用两个并行对象的总大小作为临时磁盘空间。
-                  {operation === 'move' ? '移动验证会再次读取目标对象。' : ''}
-                  对象版本、标签和访问控制设置不会迁移。
-                  {operation === 'move' ? '目标内容验证成功后才会删除源文件。' : '源文件会保留。'}
-                </p>
+                <p className="text-muted-foreground">{i18n.t('destinationDialog.crossConnectionSummary')}</p>
+                {operation === 'move' && <p className="text-muted-foreground">{i18n.t('destinationDialog.deleteSourceAfterVerificationHint')}</p>}
+                <Collapsible>
+                  <CollapsibleTrigger render={<Button type="button" variant="ghost" size="sm" />}>
+                    {i18n.t('destinationDialog.transferDetails')}
+                    <CaretDownIcon data-icon="inline-end" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="flex flex-col gap-1 pt-2 text-xs text-muted-foreground">
+                    <p>{i18n.t('destinationDialog.crossConnectionTransferHint')}</p>
+                    {operation === 'move' && <p>{i18n.t('destinationDialog.moveVerificationReadsDestinationObject')}</p>}
+                    <p>{i18n.t('destinationDialog.metadataNotTransferredHint')}</p>
+                  </CollapsibleContent>
+                </Collapsible>
               </div>
             )
           : (
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium" htmlFor="destination-connection">目标连接</label>
+                <label className="text-xs font-medium" htmlFor="destination-connection">{i18n.t('destinationDialog.destinationConnection')}</label>
                 <Select
                   value={destinationConnectionId}
                   onValueChange={(value) => {
@@ -176,10 +175,10 @@ export function ObjectDestinationDialog({
         {!confirmCrossConnection && (
           <>
             <div className="flex items-center gap-2 rounded-md bg-muted px-2 py-1 text-xs">
-              <Button variant="ghost" size="icon-sm" aria-label="返回上一级" disabled={!destination || isPending} onClick={() => setDestination(destination.split('/').slice(0, -1).join('/'))}>
+              <Button variant="ghost" size="icon-sm" aria-label={i18n.t('destinationDialog.goOneLevel')} disabled={!destination || isPending} onClick={() => setDestination(destination.split('/').slice(0, -1).join('/'))}>
                 <ArrowLeftIcon />
               </Button>
-              <Button variant="ghost" size="icon-sm" aria-label="存储桶根目录" disabled={!destination || isPending} onClick={() => setDestination('')}>
+              <Button variant="ghost" size="icon-sm" aria-label={i18n.t('filesToolbar.bucketRoot')} disabled={!destination || isPending} onClick={() => setDestination('')}>
                 <HouseIcon />
               </Button>
               <span className="min-w-0 truncate font-medium" title={destinationLabel}>{destinationLabel}</span>
@@ -188,12 +187,12 @@ export function ObjectDestinationDialog({
               {canBrowse && directoriesQuery.isPending && <div className="flex justify-center p-8"><Spinner /></div>}
               {directoriesQuery.isError && (
                 <p className="p-3 text-destructive">
-                  读取目标文件夹失败：
-                  {directoriesQuery.error.message}
+                  {i18n.t('destinationDialog.loadFoldersFailed')}
+                  {errorMessage(directoriesQuery.error)}
                 </p>
               )}
-              {!canBrowse && <p className="p-3 text-muted-foreground">请先连接目标存储桶。</p>}
-              {canBrowse && !directoriesQuery.isPending && !directoriesQuery.isError && directories.length === 0 && <p className="p-3 text-muted-foreground">当前目录下没有子文件夹</p>}
+              {!canBrowse && <p className="p-3 text-muted-foreground">{i18n.t('destinationDialog.connectDestinationBucketFirst')}</p>}
+              {canBrowse && !directoriesQuery.isPending && !directoriesQuery.isError && directories.length === 0 && <p className="p-3 text-muted-foreground">{i18n.t('destinationDialog.noSubfoldersFolder')}</p>}
               {directories.map(directory => (
                 <Button
                   key={directory.key}
@@ -209,27 +208,25 @@ export function ObjectDestinationDialog({
               {directoriesQuery.hasNextPage && (
                 <Button variant="ghost" className="w-full" disabled={directoriesQuery.isFetchingNextPage || isPending} onClick={() => directoriesQuery.fetchNextPage()}>
                   {directoriesQuery.isFetchingNextPage ? <SpinnerGapIcon className="animate-spin" data-icon="inline-start" /> : null}
-                  {directoriesQuery.isFetchingNextPage ? '正在加载…' : '加载更多文件夹'}
+                  {directoriesQuery.isFetchingNextPage ? i18n.t('shared.loading') : i18n.t('destinationDialog.loadMoreFolders')}
                 </Button>
               )}
             </div>
             {invalidDestination && (
               <p className="text-xs text-destructive">
-                不能
-                {action}
-                到原位置或所选文件夹内部。
+                {i18n.t('dynamic.invalidDestination', { action: action.toLowerCase() })}
               </p>
             )}
           </>
         )}
         <DialogFooter>
-          <Button variant="outline" disabled={isPending} onClick={() => confirmCrossConnection ? setConfirmCrossConnection(false) : onOpenChange(false)}>{confirmCrossConnection ? '返回' : '取消'}</Button>
+          <Button variant="outline" disabled={isPending} onClick={() => confirmCrossConnection ? setConfirmCrossConnection(false) : onOpenChange(false)}>{confirmCrossConnection ? i18n.t('common.back') : i18n.t('common.cancel')}</Button>
           <Button
             disabled={isPending || invalidDestination || !canBrowse || (!confirmCrossConnection && (directoriesQuery.isPending || directoriesQuery.isError))}
             onClick={() => isCrossConnection && !confirmCrossConnection ? setConfirmCrossConnection(true) : void handleSubmit()}
           >
             {isPending && <Spinner data-icon="inline-start" />}
-            {isPending ? `正在${action}…` : confirmCrossConnection ? `确认${action}` : `${action}到此处`}
+            {isPending ? i18n.t('dynamic.operationPending', { action }) : confirmCrossConnection ? i18n.t('dynamic.operationConfirm', { action }) : i18n.t('dynamic.operationHere', { action })}
           </Button>
         </DialogFooter>
       </DialogContent>

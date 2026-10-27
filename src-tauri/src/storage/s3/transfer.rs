@@ -1,6 +1,7 @@
 use super::format_storage_error;
 use super::multipart::{MULTIPART_THRESHOLD, MultipartCleanup, multipart_part_size};
 use super::objects::DownloadObjectsResult;
+use crate::error::{AppError, ErrorCode};
 use crate::transfers::model::UploadConflictAction;
 use aws_sdk_s3::error::ProvideErrorMetadata;
 use aws_sdk_s3::{
@@ -37,7 +38,7 @@ pub(crate) enum UploadOutcome {
 
 enum UploadAttemptError {
     Conflict,
-    Failed(String),
+    Failed(AppError),
 }
 
 fn upload_copy_key(key: &str, number: usize) -> String {
@@ -65,7 +66,7 @@ fn upload_copy_folder_key(key: &str, number: usize) -> String {
     }
 }
 
-async fn upload_target_exists(client: &Client, bucket: &str, key: &str) -> Result<bool, String> {
+async fn upload_target_exists(client: &Client, bucket: &str, key: &str) -> Result<bool, AppError> {
     match client.head_object().bucket(bucket).key(key).send().await {
         Ok(_) => Ok(true),
         Err(error)
@@ -78,9 +79,9 @@ async fn upload_target_exists(client: &Client, bucket: &str, key: &str) -> Resul
         {
             Ok(false)
         }
-        Err(error) => Err(format!(
-            "无法检查目标对象是否存在：{}",
-            format_storage_error(&error)
+        Err(error) => Err(AppError::with_detail(
+            ErrorCode::StorageRequestFailed,
+            format_storage_error(&error),
         )),
     }
 }
@@ -92,16 +93,18 @@ pub(crate) async fn upload_file(
     path: &Path,
     conflict_action: UploadConflictAction,
     on_progress: ProgressCallback,
-) -> Result<UploadOutcome, String> {
-    let metadata = fs::metadata(path).map_err(|error| format!("无法读取所选文件：{error}"))?;
+) -> Result<UploadOutcome, AppError> {
+    let metadata = fs::metadata(path).map_err(|error| {
+        AppError::with_detail(ErrorCode::TransferLocalReadFailed, error.to_string())
+    })?;
     if !metadata.is_file() {
-        return Err("所选路径不是文件。".to_string());
+        return Err(AppError::new(ErrorCode::TransferInvalidSource));
     }
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
-        .ok_or_else(|| "无法读取所选文件名。".to_string())?;
+        .ok_or_else(|| AppError::new(ErrorCode::TransferInvalidSource))?;
     let prefix = prefix.trim_matches('/');
     let key = if prefix.is_empty() {
         file_name.to_string()
@@ -158,7 +161,7 @@ pub(crate) async fn upload_file(
             Err(UploadAttemptError::Failed(error)) => return Err(error),
         }
     }
-    Err("无法为上传文件找到可用名称（已尝试 1000 个副本名）。".to_string())
+    Err(AppError::new(ErrorCode::TransferConflict))
 }
 
 pub(crate) async fn upload_folder_marker(
@@ -167,11 +170,12 @@ pub(crate) async fn upload_folder_marker(
     key: &str,
     path: &Path,
     conflict_action: UploadConflictAction,
-) -> Result<UploadOutcome, String> {
-    let metadata =
-        fs::symlink_metadata(path).map_err(|error| format!("无法读取所选文件夹：{error}"))?;
+) -> Result<UploadOutcome, AppError> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        AppError::with_detail(ErrorCode::TransferLocalReadFailed, error.to_string())
+    })?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return Err("所选路径不是文件夹。".to_string());
+        return Err(AppError::new(ErrorCode::TransferInvalidSource));
     }
     for number in 0..=1000 {
         let target_key = if number == 0 {
@@ -213,10 +217,15 @@ pub(crate) async fn upload_folder_marker(
                     return Ok(UploadOutcome::Skipped);
                 }
             }
-            Err(error) => return Err(format_storage_error(&error)),
+            Err(error) => {
+                return Err(AppError::with_detail(
+                    ErrorCode::StorageRequestFailed,
+                    format_storage_error(&error),
+                ));
+            }
         }
     }
-    Err("无法为上传文件夹找到可用名称（已尝试 1000 个副本名）。".to_string())
+    Err(AppError::new(ErrorCode::TransferConflict))
 }
 
 async fn upload_single(
@@ -254,7 +263,10 @@ async fn upload_single(
         {
             Err(UploadAttemptError::Conflict)
         }
-        Err(error) => Err(UploadAttemptError::Failed(format_storage_error(&error))),
+        Err(error) => Err(UploadAttemptError::Failed(AppError::with_detail(
+            ErrorCode::StorageRequestFailed,
+            format_storage_error(&error),
+        ))),
     }
 }
 
@@ -276,15 +288,25 @@ async fn upload_multipart(
         .key(key)
         .send()
         .await
-        .map_err(|error| UploadAttemptError::Failed(format_storage_error(&error)))?;
+        .map_err(|error| {
+            UploadAttemptError::Failed(AppError::with_detail(
+                ErrorCode::StorageRequestFailed,
+                format_storage_error(&error),
+            ))
+        })?;
     let upload_id = started
         .upload_id()
-        .ok_or_else(|| UploadAttemptError::Failed("目标未返回分片上传 ID。".to_string()))?
+        .ok_or_else(|| {
+            UploadAttemptError::Failed(AppError::new(ErrorCode::TransferMultipartFailed))
+        })?
         .to_string();
     let mut cleanup = MultipartCleanup::new(client, bucket, key, upload_id.clone());
-    let mut file = File::open(path)
-        .await
-        .map_err(|error| UploadAttemptError::Failed(format!("无法读取所选文件：{error}")))?;
+    let mut file = File::open(path).await.map_err(|error| {
+        UploadAttemptError::Failed(AppError::with_detail(
+            ErrorCode::TransferLocalReadFailed,
+            error.to_string(),
+        ))
+    })?;
     let mut parts = Vec::new();
     let mut transferred = 0u64;
     let mut part_number = 1;
@@ -292,7 +314,10 @@ async fn upload_multipart(
         let part_len = (size - transferred).min(part_size) as usize;
         let mut chunk = vec![0u8; part_len];
         file.read_exact(&mut chunk).await.map_err(|error| {
-            UploadAttemptError::Failed(format!("读取第 {part_number} 个分片失败：{error}"))
+            UploadAttemptError::Failed(
+                AppError::with_detail(ErrorCode::TransferMultipartFailed, error.to_string())
+                    .param("part", part_number),
+            )
         })?;
         let uploaded = client
             .upload_part()
@@ -304,13 +329,18 @@ async fn upload_multipart(
             .send()
             .await
             .map_err(|error| {
-                UploadAttemptError::Failed(format!(
-                    "上传第 {part_number} 个分片失败：{}",
-                    format_storage_error(&error)
-                ))
+                UploadAttemptError::Failed(
+                    AppError::with_detail(
+                        ErrorCode::TransferMultipartFailed,
+                        format_storage_error(&error),
+                    )
+                    .param("part", part_number),
+                )
             })?;
         let etag = uploaded.e_tag().ok_or_else(|| {
-            UploadAttemptError::Failed(format!("第 {part_number} 个分片缺少 ETag。"))
+            UploadAttemptError::Failed(
+                AppError::new(ErrorCode::StorageResponseInvalid).param("part", part_number),
+            )
         })?;
         parts.push(
             CompletedPart::builder()
@@ -325,13 +355,18 @@ async fn upload_multipart(
     if file
         .metadata()
         .await
-        .map_err(|error| UploadAttemptError::Failed(format!("无法检查所选文件：{error}")))?
+        .map_err(|error| {
+            UploadAttemptError::Failed(AppError::with_detail(
+                ErrorCode::StorageRequestFailed,
+                error.to_string(),
+            ))
+        })?
         .len()
         != size
     {
-        return Err(UploadAttemptError::Failed(
-            "所选文件在上传期间发生变化，请重试。".to_string(),
-        ));
+        return Err(UploadAttemptError::Failed(AppError::new(
+            ErrorCode::TransferSourceChanged,
+        )));
     }
     let mut complete = client
         .complete_multipart_upload()
@@ -363,9 +398,9 @@ async fn upload_multipart(
         {
             Err(UploadAttemptError::Conflict)
         }
-        Err(error) => Err(UploadAttemptError::Failed(format!(
-            "完成分片上传失败：{}",
-            format_storage_error(&error)
+        Err(error) => Err(UploadAttemptError::Failed(AppError::with_detail(
+            ErrorCode::TransferMultipartFailed,
+            format_storage_error(&error),
         ))),
     }
 }
@@ -378,20 +413,22 @@ pub(crate) async fn download_file(
     destination_root: &Path,
     overwrite: bool,
     on_progress: ProgressCallback,
-) -> Result<bool, String> {
+) -> Result<bool, AppError> {
     let destination = safe_download_path(destination_root, relative_path)?;
     let parent = destination
         .parent()
-        .ok_or_else(|| "无法确定下载文件夹。".to_string())?;
-    fs::create_dir_all(parent).map_err(|error| format!("无法创建下载文件夹：{error}"))?;
-    let canonical_parent = parent
-        .canonicalize()
-        .map_err(|error| format!("无法访问下载文件夹：{error}"))?;
+        .ok_or_else(|| AppError::new(ErrorCode::TransferInvalidDestination))?;
+    fs::create_dir_all(parent).map_err(|error| {
+        AppError::with_detail(ErrorCode::TransferLocalWriteFailed, error.to_string())
+    })?;
+    let canonical_parent = parent.canonicalize().map_err(|error| {
+        AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+    })?;
     if !canonical_parent.starts_with(destination_root)
         || fs::symlink_metadata(&destination)
             .is_ok_and(|metadata| metadata.file_type().is_symlink())
     {
-        return Err("下载路径不安全。".to_string());
+        return Err(AppError::new(ErrorCode::TransferUnsafePath));
     }
     if destination.exists() && !overwrite {
         return Ok(false);
@@ -402,7 +439,12 @@ pub(crate) async fn download_file(
         .key(key)
         .send()
         .await
-        .map_err(|error| format_storage_error(&error))?;
+        .map_err(|error| {
+            AppError::with_detail(
+                ErrorCode::StorageRequestFailed,
+                format_storage_error(&error),
+            )
+        })?;
     let total = u64::try_from(output.content_length().unwrap_or(-1)).ok();
     on_progress(0, total);
     let temp_path = parent.join(format!(
@@ -411,37 +453,40 @@ pub(crate) async fn download_file(
         NEXT_TEMP_FILE_ID.fetch_add(1, Ordering::Relaxed)
     ));
     let mut cleanup = TempDownload::new(temp_path.clone());
-    let mut file = File::create(&temp_path)
-        .await
-        .map_err(|error| format!("无法创建下载文件：{error}"))?;
+    let mut file = File::create(&temp_path).await.map_err(|error| {
+        AppError::with_detail(ErrorCode::TransferLocalWriteFailed, error.to_string())
+    })?;
     let mut body = output.body.into_async_read();
     let mut buffer = [0u8; 64 * 1024];
     let mut transferred = 0u64;
     loop {
-        let count = body
-            .read(&mut buffer)
-            .await
-            .map_err(|error| format!("下载文件失败：{error}"))?;
+        let count = body.read(&mut buffer).await.map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
         if count == 0 {
             break;
         }
-        file.write_all(&buffer[..count])
-            .await
-            .map_err(|error| format!("写入下载文件失败：{error}"))?;
+        file.write_all(&buffer[..count]).await.map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferLocalWriteFailed, error.to_string())
+        })?;
         transferred += count as u64;
         on_progress(transferred, total);
     }
     if total.is_some_and(|expected| transferred != expected) {
-        return Err("下载文件不完整，请重试。".to_string());
+        return Err(AppError::new(ErrorCode::TransferVerificationFailed));
     }
-    file.flush()
-        .await
-        .map_err(|error| format!("写入下载文件失败：{error}"))?;
+    file.flush().await.map_err(|error| {
+        AppError::with_detail(ErrorCode::TransferLocalWriteFailed, error.to_string())
+    })?;
     drop(file);
     if overwrite && destination.exists() {
-        fs::remove_file(&destination).map_err(|error| format!("无法覆盖现有文件：{error}"))?;
+        fs::remove_file(&destination).map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferLocalWriteFailed, error.to_string())
+        })?;
     }
-    fs::rename(&temp_path, &destination).map_err(|error| format!("无法保存下载文件：{error}"))?;
+    fs::rename(&temp_path, &destination).map_err(|error| {
+        AppError::with_detail(ErrorCode::TransferLocalWriteFailed, error.to_string())
+    })?;
     cleanup.disarm();
     Ok(true)
 }
@@ -452,10 +497,12 @@ pub(crate) async fn progress_body_from_path(
     path: &Path,
     total: u64,
     on_progress: ProgressCallback,
-) -> Result<aws_sdk_s3::primitives::ByteStream, String> {
+) -> Result<aws_sdk_s3::primitives::ByteStream, AppError> {
     Ok(aws_sdk_s3::primitives::ByteStream::from_path(path)
         .await
-        .map_err(|error| format!("无法读取所选文件：{error}"))?
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferLocalReadFailed, error.to_string())
+        })?
         .map(move |inner| {
             on_progress(0, Some(total));
             aws_sdk_s3::primitives::SdkBody::from_body_1_x(ProgressBody {
@@ -526,10 +573,10 @@ impl Drop for TempDownload {
     }
 }
 
-pub(crate) fn safe_download_path(root: &Path, relative_key: &str) -> Result<PathBuf, String> {
+pub(crate) fn safe_download_path(root: &Path, relative_key: &str) -> Result<PathBuf, AppError> {
     let relative_key = relative_key.trim_end_matches('/');
     if relative_key.is_empty() {
-        return Err("对象 Key 不包含有效文件名。".to_string());
+        return Err(AppError::new(ErrorCode::ObjectsInvalidKey));
     }
 
     let mut destination = root.to_path_buf();
@@ -541,12 +588,12 @@ pub(crate) fn safe_download_path(root: &Path, relative_key: &str) -> Result<Path
                 .chars()
                 .any(|character| matches!(character, '\\' | ':' | '\0'))
         {
-            return Err("对象 Key 包含不安全的本地路径。".to_string());
+            return Err(AppError::new(ErrorCode::TransferUnsafePath));
         }
         destination.push(component);
     }
     if !destination.starts_with(root) {
-        return Err("对象 Key 指向下载目录之外的路径。".to_string());
+        return Err(AppError::new(ErrorCode::TransferUnsafePath));
     }
     Ok(destination)
 }
@@ -557,16 +604,18 @@ pub(crate) async fn download_objects(
     prefix: String,
     keys: Vec<String>,
     destination_path: String,
-) -> Result<DownloadObjectsResult, String> {
+) -> Result<DownloadObjectsResult, AppError> {
     if keys.is_empty() {
-        return Err("请先选择要下载的文件或文件夹。".to_string());
+        return Err(AppError::new(ErrorCode::TransferInvalidDestination));
     }
 
     let destination_root = PathBuf::from(destination_path)
         .canonicalize()
-        .map_err(|error| format!("无法访问所选下载目录：{error}"))?;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
     if !destination_root.is_dir() {
-        return Err("所选下载位置不是目录。".to_string());
+        return Err(AppError::new(ErrorCode::TransferInvalidDestination));
     }
 
     let normalized_prefix = if prefix.trim_matches('/').is_empty() {
@@ -579,13 +628,13 @@ pub(crate) async fn download_objects(
 
     for key in keys {
         if !key.starts_with(&normalized_prefix) {
-            return Err("所选对象不属于当前目录。".to_string());
+            return Err(AppError::new(ErrorCode::TransferInvalidDestination));
         }
 
         if key.ends_with('/') {
             let relative_directory = key
                 .strip_prefix(&normalized_prefix)
-                .ok_or_else(|| "无法解析所选文件夹路径。".to_string())?;
+                .ok_or_else(|| AppError::new(ErrorCode::TransferInvalidDestination))?;
             match safe_download_path(&destination_root, relative_directory) {
                 Ok(path) => {
                     if fs::create_dir_all(&path).is_err() {
@@ -616,10 +665,12 @@ pub(crate) async fn download_objects(
                 if let Some(token) = continuation_token.as_deref() {
                     request = request.continuation_token(token);
                 }
-                let page = request
-                    .send()
-                    .await
-                    .map_err(|error| format_storage_error(&error))?;
+                let page = request.send().await.map_err(|error| {
+                    AppError::with_detail(
+                        ErrorCode::StorageRequestFailed,
+                        format_storage_error(&error),
+                    )
+                })?;
                 for object in page.contents() {
                     let Some(object_key) = object.key() else {
                         continue;
@@ -640,7 +691,7 @@ pub(crate) async fn download_objects(
             }
         } else {
             let Some(relative_key) = key.strip_prefix(&normalized_prefix) else {
-                return Err("所选对象不属于当前目录。".to_string());
+                return Err(AppError::new(ErrorCode::TransferInvalidDestination));
             };
             files.insert(relative_key.to_string(), key);
         }

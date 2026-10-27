@@ -11,11 +11,11 @@ const kindColors: Record<FileKind, string> = {
 }
 
 const kindSurfaces: Record<FileKind, string> = {
-  folder: 'bg-[#fff3db]',
-  image: 'bg-[#edf2fd]',
-  document: 'bg-[#fdf0ef]',
-  archive: 'bg-[#f4eff9]',
-  file: 'bg-[#eff5f6]',
+  folder: 'bg-file-folder-surface',
+  image: 'bg-file-image-surface',
+  document: 'bg-file-document-surface',
+  archive: 'bg-file-archive-surface',
+  file: 'bg-file-surface',
 }
 
 interface FileIconProps {

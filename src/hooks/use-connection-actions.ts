@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { errorMessage } from '@/api/invoke'
 import { toast } from '@/components/ui/toast-manager'
+import i18n from '@/i18n'
 
 interface UseConnectionActionsOptions {
   connectSavedConnection: (connectionId: string) => Promise<void>
@@ -19,7 +21,7 @@ export function useConnectionActions({ connectSavedConnection, disconnectConnect
       onConnected()
     }
     catch (cause) {
-      toast.add({ title: `连接失败：${cause instanceof Error ? cause.message : String(cause)}`, type: 'error', timeout: 4500 })
+      toast.add({ title: i18n.t('workflow.connectFailed', { message: errorMessage(cause) }), type: 'error', timeout: 4500 })
     }
     finally {
       setConnectingConnectionIds((current) => {
@@ -35,7 +37,7 @@ export function useConnectionActions({ connectSavedConnection, disconnectConnect
       await disconnectConnection(connectionId)
     }
     catch (cause) {
-      toast.add({ title: `断开连接失败：${cause instanceof Error ? cause.message : String(cause)}`, type: 'error', timeout: 4500 })
+      toast.add({ title: i18n.t('workflow.disconnectFailed', { message: errorMessage(cause) }), type: 'error', timeout: 4500 })
     }
   }
 

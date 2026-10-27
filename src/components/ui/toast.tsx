@@ -1,10 +1,11 @@
 import { Toast as ToastPrimitive } from '@base-ui/react/toast'
 import { CheckCircleIcon, InfoIcon, SpinnerIcon, WarningIcon, XCircleIcon, XIcon } from '@phosphor-icons/react'
 import { cn } from 'cn'
-
 import * as React from 'react'
+
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/toast-manager'
+import i18n from '@/i18n'
 
 function ToastProvider({ ...props }: ToastPrimitive.Provider.Props) {
   return <ToastPrimitive.Provider {...props} />
@@ -114,7 +115,7 @@ function ToastClose({
   return (
     <ToastPrimitive.Close
       data-slot="toast-close"
-      aria-label="Close toast"
+      aria-label={i18n.t('common.closeToast')}
       render={render}
       className={cn(
         'relative shrink-0 text-muted-foreground after:absolute after:-inset-2 after:content-[\'\'] hover:text-foreground',

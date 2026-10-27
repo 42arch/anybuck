@@ -31,8 +31,11 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import i18n from '@/i18n'
 import { cn } from '@/lib/utils'
 import { useFileTransferStore } from '@/store/file-transfer-store'
+
+const sidebarActiveToggleClass = 'data-[state=on]:bg-sidebar-accent data-[state=on]:text-sidebar-accent-foreground data-[state=on]:hover:bg-sidebar-accent data-[state=on]:hover:text-sidebar-accent-foreground'
 
 interface FilesToolbarProps {
   bucketName: string
@@ -88,7 +91,7 @@ export function FilesToolbar({
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink
-                render={<button type="button" onClick={() => onNavigate('')} aria-label="存储桶根目录" />}
+                render={<button type="button" onClick={() => onNavigate('')} aria-label={i18n.t('filesToolbar.bucketRoot')} />}
               >
                 <HouseIcon className="size-4" />
               </BreadcrumbLink>
@@ -118,15 +121,15 @@ export function FilesToolbar({
           <InputGroup className="w-44 sm:w-52">
             <InputGroupAddon><MagnifyingGlassIcon /></InputGroupAddon>
             <InputGroupInput
-              aria-label="搜索当前目录"
-              placeholder="搜索当前目录..."
+              aria-label={i18n.t('filesToolbar.searchCurrentFolder')}
+              placeholder={i18n.t('filesToolbar.searchCurrentFolderLabel')}
               value={search}
               onChange={event => onSearchChange(event.target.value)}
             />
           </InputGroup>
           <DropdownMenu>
             <DropdownMenuTrigger
-              render={<Button size="icon-sm" aria-label="上传文件或文件夹" title="上传文件或文件夹" disabled={isUploading} />}
+              render={<Button size="icon-sm" aria-label={i18n.t('filesToolbar.uploadFilesFolders')} title={i18n.t('filesToolbar.uploadFilesFolders')} disabled={isUploading} />}
             >
               <UploadSimpleIcon />
             </DropdownMenuTrigger>
@@ -134,11 +137,11 @@ export function FilesToolbar({
               <DropdownMenuGroup>
                 <DropdownMenuItem onClick={() => void uploadFiles(path)}>
                   <UploadSimpleIcon data-icon="inline-start" />
-                  选择文件…
+                  {i18n.t('filesToolbar.chooseFiles')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => void uploadFolders(path)}>
                   <FolderIcon data-icon="inline-start" />
-                  选择文件夹…
+                  {i18n.t('filesToolbar.chooseFolder')}
                 </DropdownMenuItem>
               </DropdownMenuGroup>
             </DropdownMenuContent>
@@ -149,24 +152,24 @@ export function FilesToolbar({
                 <Button
                   variant="outline"
                   size="icon-sm"
-                  aria-label="新建文件夹"
+                  aria-label={i18n.t('filesToolbar.newFolder')}
                   onClick={onCreateFolderClick}
                 >
                   <PlusIcon />
                 </Button>
               )}
             />
-            <TooltipContent>新建文件夹</TooltipContent>
+            <TooltipContent>{i18n.t('filesToolbar.newFolder')}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger
               render={(
-                <Button variant="outline" size="icon-sm" aria-label="刷新文件列表" onClick={onRefresh}>
+                <Button variant="outline" size="icon-sm" aria-label={i18n.t('filesToolbar.refreshFileList')} onClick={onRefresh}>
                   <ArrowClockwiseIcon />
                 </Button>
               )}
             />
-            <TooltipContent>刷新文件列表</TooltipContent>
+            <TooltipContent>{i18n.t('filesToolbar.refreshFileList')}</TooltipContent>
           </Tooltip>
           <ToggleGroup
             variant="outline"
@@ -177,27 +180,27 @@ export function FilesToolbar({
               if (value.length > 0)
                 onGridChange(value[0] === 'grid')
             }}
-            aria-label="文件视图"
+            aria-label={i18n.t('filesToolbar.fileView')}
           >
             <Tooltip>
               <TooltipTrigger
                 render={(
-                  <ToggleGroupItem value="list" aria-label="列表视图">
+                  <ToggleGroupItem value="list" aria-label={i18n.t('filesToolbar.listView')} className={sidebarActiveToggleClass}>
                     <ListBulletsIcon />
                   </ToggleGroupItem>
                 )}
               />
-              <TooltipContent>列表视图</TooltipContent>
+              <TooltipContent>{i18n.t('filesToolbar.listView')}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger
                 render={(
-                  <ToggleGroupItem value="grid" aria-label="网格视图">
+                  <ToggleGroupItem value="grid" aria-label={i18n.t('filesToolbar.gridView')} className={sidebarActiveToggleClass}>
                     <GridFourIcon />
                   </ToggleGroupItem>
                 )}
               />
-              <TooltipContent>网格视图</TooltipContent>
+              <TooltipContent>{i18n.t('filesToolbar.gridView')}</TooltipContent>
             </Tooltip>
           </ToggleGroup>
         </div>
@@ -205,15 +208,15 @@ export function FilesToolbar({
       {selectedCount > 0 && (
         <div className="absolute inset-0 flex items-center justify-between gap-2 bg-primary/5 px-4 text-xs text-foreground motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150">
           <strong className="min-w-0 truncate font-medium">
-            已选择
+            {i18n.t('filesToolbar.selected')}
             {' '}
             {selectedCount}
             {' '}
-            个项目
+            {i18n.t('filesToolbar.selectedItemUnit')}
           </strong>
           <div className="flex shrink-0 items-center gap-1">
             <Button variant="ghost" size="sm" disabled={isDownloading} onClick={onDownloadSelected}>
-              下载
+              {i18n.t('common.download')}
             </Button>
             <Button
               variant="ghost"
@@ -221,7 +224,7 @@ export function FilesToolbar({
               className="hidden sm:inline-flex"
               onClick={onCopySelected}
             >
-              复制
+              {i18n.t('common.copy')}
             </Button>
             <Button
               variant="ghost"
@@ -229,7 +232,7 @@ export function FilesToolbar({
               className="hidden sm:inline-flex"
               onClick={onMoveSelected}
             >
-              移动
+              {i18n.t('common.move')}
             </Button>
             <Button
               variant="ghost"
@@ -238,37 +241,37 @@ export function FilesToolbar({
               onClick={onDeleteSelected}
             >
               <TrashIcon data-icon="inline-start" />
-              删除
+              {i18n.t('common.delete')}
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button variant="ghost" size="sm" className="sm:hidden" />}
               >
                 <DotsThreeIcon data-icon="inline-start" />
-                更多
+                {i18n.t('common.more')}
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuGroup>
                   <DropdownMenuItem onClick={onCopySelected}>
-                    复制
+                    {i18n.t('common.copy')}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={onMoveSelected}>
-                    移动
+                    {i18n.t('common.move')}
                   </DropdownMenuItem>
                   <DropdownMenuItem variant="destructive" onClick={onDeleteSelected}>
-                    删除
+                    {i18n.t('common.delete')}
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
             <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={onClearSelection}>
-              取消选择
+              {i18n.t('filesToolbar.clearSelection')}
             </Button>
             <Button
               variant="ghost"
               size="icon-sm"
               className="sm:hidden"
-              aria-label="取消选择"
+              aria-label={i18n.t('filesToolbar.clearSelection')}
               onClick={onClearSelection}
             >
               <XIcon />

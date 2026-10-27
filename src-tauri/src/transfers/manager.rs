@@ -1,3 +1,4 @@
+use crate::error::{AppError, ErrorCode};
 use crate::persistence::tasks::{load_tasks, save_tasks};
 use crate::storage::s3::copy::CopyCheckpoint;
 use crate::transfers::model::{TransferTask, is_terminal, now};
@@ -31,18 +32,20 @@ pub(crate) struct TransferManagerInner {
 }
 
 impl TransferManager {
-    pub fn load(app: &AppHandle) -> Result<Self, String> {
-        let directory = app
-            .path()
-            .app_data_dir()
-            .map_err(|error| format!("无法获取应用数据目录：{error}"))?;
-        fs::create_dir_all(&directory).map_err(|error| format!("无法创建应用数据目录：{error}"))?;
+    pub fn load(app: &AppHandle) -> Result<Self, AppError> {
+        let directory = app.path().app_data_dir().map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferHistoryFailed, error.to_string())
+        })?;
+        fs::create_dir_all(&directory).map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferHistoryFailed, error.to_string())
+        })?;
         let storage_path = directory.join(TASKS_FILE);
         let mut tasks = load_tasks(&storage_path)?;
         for task in &mut tasks {
             if task.status == "running" || task.status == "queued" {
                 task.status = "interrupted".to_string();
-                task.error = Some("应用关闭时任务尚未完成，请手动重试。".to_string());
+                task.error = None;
+                task.error_code = Some("transferInterrupted".to_string());
                 task.updated_at = now();
             }
         }
@@ -60,17 +63,17 @@ impl TransferManager {
         Ok(manager)
     }
 
-    pub(crate) fn persist(&self) -> Result<(), String> {
+    pub(crate) fn persist(&self) -> Result<(), AppError> {
         let _persist_guard = self
             .inner
             .persist_lock
             .lock()
-            .map_err(|_| "传输状态不可用。".to_string())?;
+            .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?;
         let tasks = self
             .inner
             .tasks
             .lock()
-            .map_err(|_| "传输状态不可用。".to_string())?;
+            .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?;
         save_tasks(&self.inner.storage_path, &tasks)
     }
 
@@ -78,13 +81,13 @@ impl TransferManager {
         let _ = app.emit(EVENT_NAME, task);
     }
 
-    pub(crate) fn add_task(&self, app: &AppHandle, task: TransferTask) -> Result<(), String> {
+    pub(crate) fn add_task(&self, app: &AppHandle, task: TransferTask) -> Result<(), AppError> {
         {
             let mut tasks = self
                 .inner
                 .tasks
                 .lock()
-                .map_err(|_| "传输状态不可用。".to_string())?;
+                .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?;
             tasks.push(task.clone());
         }
         self.persist()?;
@@ -96,18 +99,18 @@ impl TransferManager {
         &self,
         app: &AppHandle,
         new_tasks: &[TransferTask],
-    ) -> Result<(), String> {
+    ) -> Result<(), AppError> {
         let persist_guard = self
             .inner
             .persist_lock
             .lock()
-            .map_err(|_| "传输状态不可用。".to_string())?;
+            .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?;
         {
             let mut tasks = self
                 .inner
                 .tasks
                 .lock()
-                .map_err(|_| "传输状态不可用。".to_string())?;
+                .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?;
             let original_len = tasks.len();
             tasks.extend_from_slice(new_tasks);
             if let Err(error) = save_tasks(&self.inner.storage_path, &tasks) {
@@ -127,14 +130,15 @@ impl TransferManager {
         app: &AppHandle,
         id: &str,
         status: &str,
-        error: Option<String>,
+        error: Option<AppError>,
     ) {
         let mut changed = Vec::new();
         if let Ok(mut tasks) = self.inner.tasks.lock()
             && let Some(task) = tasks.iter_mut().find(|task| task.id == id)
         {
             task.status = status.to_string();
-            task.error = error;
+            task.error_code = error.as_ref().map(AppError::code_key);
+            task.error = error.and_then(|error| error.detail);
             if status == "completed" {
                 let total = task.total_bytes.unwrap_or(task.transferred_bytes);
                 task.total_bytes = Some(total);
@@ -236,17 +240,17 @@ impl TransferManager {
         app: &AppHandle,
         id: &str,
         checkpoint: CopyCheckpoint,
-    ) -> Result<(), String> {
+    ) -> Result<(), AppError> {
         let changed = {
             let mut tasks = self
                 .inner
                 .tasks
                 .lock()
-                .map_err(|_| "传输状态不可用。".to_string())?;
+                .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?;
             let task = tasks
                 .iter_mut()
                 .find(|task| task.id == id && task.status == "running")
-                .ok_or_else(|| "任务已取消。".to_string())?;
+                .ok_or_else(|| AppError::new(ErrorCode::TransferCancelled))?;
             task.checkpoint = Some(checkpoint);
             task.phase = Some("deleting".to_string());
             task.updated_at = now();

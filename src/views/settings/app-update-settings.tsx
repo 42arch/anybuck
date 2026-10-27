@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Progress, ProgressLabel, ProgressValue } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { canCheckForUpdates, useAppUpdateQuery } from '@/hooks/use-app-update-query'
+import i18n from '@/i18n'
 import { formatBytes } from '@/lib/format-bytes'
 import { useAppUpdateStore } from '@/store/app-update-store'
 
@@ -26,14 +27,14 @@ export function AppUpdateSettings() {
   const isBusy = phase === 'preparing' || phase === 'downloading' || phase === 'installing'
 
   return (
-    <section id="settings-app-update" className="flex scroll-mt-4 flex-col gap-3">
+    <section className="flex flex-col gap-3">
       <div className="flex flex-col gap-1 pb-1">
-        <h2 className="text-base font-semibold">应用更新</h2>
-        <p className="text-xs text-muted-foreground">{`当前版本：${versionQuery.data ?? (isTauri() ? '读取中' : '开发模式')}。正式安装包启动时自动检查新版本。`}</p>
+        <h2 className="text-base font-semibold">{i18n.t('settings.appUpdate')}</h2>
+        <p className="text-xs text-muted-foreground">{i18n.t('dynamic.updateVersion', { version: versionQuery.data ?? (isTauri() ? i18n.t('appUpdate.loading') : i18n.t('appUpdate.developmentMode')) })}</p>
       </div>
 
       {!canCheckForUpdates
-        ? <p className="text-xs text-muted-foreground">更新检查仅在正式安装的桌面版本中可用。</p>
+        ? <p className="text-xs text-muted-foreground">{i18n.t('appUpdate.installedBuildsOnlyHint')}</p>
         : (
             <>
               <div className="flex flex-wrap items-center gap-2">
@@ -43,60 +44,60 @@ export function AppUpdateSettings() {
                   onClick={() => void updateQuery.refetch()}
                 >
                   {updateQuery.isFetching && <Spinner data-icon="inline-start" />}
-                  检查更新
+                  {i18n.t('appUpdate.checkUpdates')}
                 </Button>
 
                 {phase === 'idle' && updateQuery.data && (
                   <Button disabled={updateQuery.isFetching} onClick={() => void startUpdate()}>
                     <DownloadSimpleIcon data-icon="inline-start" />
-                    下载并安装
+                    {i18n.t('appUpdate.downloadInstall')}
                   </Button>
                 )}
                 {phase === 'ready' && (
-                  <Button onClick={() => void installUpdate()}>安装并重启</Button>
+                  <Button onClick={() => void installUpdate()}>{i18n.t('appUpdate.installRestart')}</Button>
                 )}
                 {phase === 'restart' && (
-                  <Button onClick={() => void restartApp()}>重启应用</Button>
+                  <Button onClick={() => void restartApp()}>{i18n.t('appUpdate.restartApp')}</Button>
                 )}
               </div>
 
               {updateQuery.isError && (
                 <Alert variant="destructive">
-                  <AlertTitle>检查更新失败</AlertTitle>
+                  <AlertTitle>{i18n.t('appUpdate.updateCheckFailed')}</AlertTitle>
                   <AlertDescription>{String(updateQuery.error)}</AlertDescription>
                 </Alert>
               )}
               {error && (
                 <Alert variant="destructive">
-                  <AlertTitle>更新未完成</AlertTitle>
+                  <AlertTitle>{i18n.t('appUpdate.updateIncomplete')}</AlertTitle>
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
 
-              {phase === 'preparing' && <p className="text-xs text-muted-foreground">正在检查传输任务和更新文件。</p>}
+              {phase === 'preparing' && <p className="text-xs text-muted-foreground">{i18n.t('appUpdate.checkingTransferTasksUpdateFiles')}</p>}
               {phase === 'downloading' && (
                 <div className="flex flex-col gap-2">
-                  <p className="text-xs text-muted-foreground">正在下载更新，请保持应用运行。</p>
+                  <p className="text-xs text-muted-foreground">{i18n.t('appUpdate.downloadingUpdateKeepAppOpen')}</p>
                   <Progress value={percent}>
-                    <ProgressLabel>下载进度</ProgressLabel>
+                    <ProgressLabel>{i18n.t('appUpdate.downloadProgress')}</ProgressLabel>
                     <ProgressValue>{() => totalBytes ? `${formatBytes(downloadedBytes)} / ${formatBytes(totalBytes)}` : formatBytes(downloadedBytes)}</ProgressValue>
                   </Progress>
                 </div>
               )}
-              {phase === 'installing' && <p className="text-xs text-muted-foreground">正在安装更新，应用即将重启。</p>}
-              {phase === 'ready' && <p className="text-xs text-muted-foreground">更新已下载。传输任务结束后可继续安装。</p>}
-              {phase === 'restart' && <p className="text-xs text-muted-foreground">更新已安装，请重启应用以使用新版本。</p>}
+              {phase === 'installing' && <p className="text-xs text-muted-foreground">{i18n.t('appUpdate.installingUpdateAppRestartSoon')}</p>}
+              {phase === 'ready' && <p className="text-xs text-muted-foreground">{i18n.t('appUpdate.downloadedPendingTransfersHint')}</p>}
+              {phase === 'restart' && <p className="text-xs text-muted-foreground">{i18n.t('appUpdate.restartRequiredHint')}</p>}
 
               {updateQuery.data && (
                 <Alert>
-                  <AlertTitle>{`发现新版本 ${updateQuery.data.version}`}</AlertTitle>
+                  <AlertTitle>{i18n.t('dynamic.newVersion', { version: updateQuery.data.version })}</AlertTitle>
                   <AlertDescription className="whitespace-pre-wrap">
-                    {updateQuery.data.body || '暂无更新说明。'}
+                    {updateQuery.data.body || i18n.t('appUpdate.noReleaseNotesAvailable')}
                   </AlertDescription>
                 </Alert>
               )}
               {updateQuery.isFetched && !updateQuery.data && !updateQuery.isError && (
-                <p className="text-xs text-muted-foreground">当前已是最新版本。</p>
+                <p className="text-xs text-muted-foreground">{i18n.t('appUpdate.usingLatestVersion')}</p>
               )}
             </>
           )}

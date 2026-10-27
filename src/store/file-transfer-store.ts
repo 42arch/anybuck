@@ -2,7 +2,9 @@ import type { ActiveStorageConnection } from '@/types/connection'
 import type { DownloadPlanSummary, PendingUpload, UploadConflictAction } from '@/types/transfer'
 import { open } from '@tauri-apps/plugin-dialog'
 import { create } from 'zustand'
+import { errorMessage } from '@/api/invoke'
 import { enqueueDownload, enqueueUploads, prepareDownload } from '@/api/transfers'
+import i18n from '@/i18n'
 import { showNotice } from '@/lib/notice'
 import { useConnectionStore } from '@/store/connection-store'
 import { useSettingsStore } from '@/store/settings-store'
@@ -41,7 +43,7 @@ export const useFileTransferStore = create<FileTransferState>((set, get) => ({
 
     const connection = getActiveConnection()
     if (!connection) {
-      showNotice('请先添加并连接存储桶。')
+      showNotice(i18n.t('workflow.connectBucketFirst'))
       return
     }
 
@@ -55,17 +57,17 @@ export const useFileTransferStore = create<FileTransferState>((set, get) => ({
 
     const connection = getActiveConnection()
     if (!connection) {
-      showNotice('请先添加并连接存储桶。')
+      showNotice(i18n.t('workflow.connectBucketFirst'))
       return
     }
 
     let selection: string | string[] | null
     set({ isSelectingFiles: true })
     try {
-      selection = await open({ multiple: true, directory: false, title: '选择要上传的文件' })
+      selection = await open({ multiple: true, directory: false, title: i18n.t('workflow.chooseUploadFiles') })
     }
     catch (cause) {
-      showNotice(`无法打开文件选择器：${cause instanceof Error ? cause.message : String(cause)}`)
+      showNotice(i18n.t('workflow.filePickerFailed', { message: errorMessage(cause) }))
       return
     }
     finally {
@@ -85,17 +87,17 @@ export const useFileTransferStore = create<FileTransferState>((set, get) => ({
       return
 
     if (!getActiveConnection()) {
-      showNotice('请先添加并连接存储桶。')
+      showNotice(i18n.t('workflow.connectBucketFirst'))
       return
     }
 
     let selection: string | string[] | null
     set({ isSelectingFiles: true })
     try {
-      selection = await open({ multiple: true, directory: true, title: '选择要上传的文件夹' })
+      selection = await open({ multiple: true, directory: true, title: i18n.t('workflow.chooseUploadFolders') })
     }
     catch (cause) {
-      showNotice(`无法打开文件夹选择器：${cause instanceof Error ? cause.message : String(cause)}`)
+      showNotice(i18n.t('workflow.folderPickerFailed', { message: errorMessage(cause) }))
       return
     }
     finally {
@@ -119,11 +121,11 @@ export const useFileTransferStore = create<FileTransferState>((set, get) => ({
       set({ pendingUpload: null })
       const fileCount = tasks.filter(task => task.operation === 'upload').length
       const emptyFolderCount = tasks.filter(task => task.operation === 'upload-marker').length
-      showNotice(`已加入 ${fileCount} 个文件${emptyFolderCount > 0 ? `和 ${emptyFolderCount} 个空文件夹` : ''}上传任务。`)
+      showNotice(i18n.t('workflow.uploadsQueued', { files: fileCount, folders: emptyFolderCount > 0 ? i18n.t('workflow.emptyFolders', { count: emptyFolderCount }) : '' }))
     }
     catch (cause) {
       set({ pendingUpload: null })
-      showNotice(`无法加入上传任务：${cause instanceof Error ? cause.message : String(cause)}`)
+      showNotice(i18n.t('workflow.uploadQueueFailed', { message: errorMessage(cause) }))
     }
     finally {
       set({ isEnqueuingUpload: false })
@@ -142,7 +144,7 @@ export const useFileTransferStore = create<FileTransferState>((set, get) => ({
 
     const connection = getActiveConnection()
     if (!connection) {
-      showNotice('请先连接存储桶。')
+      showNotice(i18n.t('workflow.connectExistingBucketFirst'))
       return
     }
 
@@ -150,14 +152,14 @@ export const useFileTransferStore = create<FileTransferState>((set, get) => ({
     let destinationPath = defaultDownloadPath
     if (!destinationPath) {
       try {
-        const selectedPath = await open({ directory: true, multiple: false, title: '选择下载位置' })
+        const selectedPath = await open({ directory: true, multiple: false, title: i18n.t('workflow.chooseDownloadLocation') })
         if (typeof selectedPath !== 'string')
           return
         destinationPath = selectedPath
         setDefaultDownloadPath(selectedPath)
       }
       catch (cause) {
-        showNotice(`无法打开目录选择器：${cause instanceof Error ? cause.message : String(cause)}`)
+        showNotice(i18n.t('workflow.directoryPickerFailed', { message: errorMessage(cause) }))
         return
       }
     }
@@ -174,11 +176,11 @@ export const useFileTransferStore = create<FileTransferState>((set, get) => ({
       }
       else {
         const tasks = await enqueueDownload(plan.planId, 'overwrite')
-        showNotice(`已加入 ${tasks.filter(task => task.operation === 'download').length} 个下载任务。`)
+        showNotice(i18n.t('workflow.downloadsQueued', { count: tasks.filter(task => task.operation === 'download').length }))
       }
     }
     catch (cause) {
-      showNotice(`无法加入下载任务：${cause instanceof Error ? cause.message : String(cause)}`)
+      showNotice(i18n.t('workflow.downloadQueueFailed', { message: errorMessage(cause) }))
     }
   },
 
@@ -190,10 +192,10 @@ export const useFileTransferStore = create<FileTransferState>((set, get) => ({
     set({ pendingDownload: null })
     try {
       const tasks = await enqueueDownload(plan.planId, conflictAction)
-      showNotice(`已加入 ${tasks.filter(task => task.operation === 'download').length} 个下载任务。`)
+      showNotice(i18n.t('workflow.downloadsQueued', { count: tasks.filter(task => task.operation === 'download').length }))
     }
     catch (cause) {
-      showNotice(`无法加入下载任务：${cause instanceof Error ? cause.message : String(cause)}`)
+      showNotice(i18n.t('workflow.downloadQueueFailed', { message: errorMessage(cause) }))
     }
   },
 

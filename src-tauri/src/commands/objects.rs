@@ -1,4 +1,5 @@
 use crate::connection::manager::{StorageConnectionState, client_for_connection};
+use crate::error::AppError;
 use crate::storage::s3::objects::{self, DeleteObjectsResult, StorageObjectPage};
 use tauri::{State, ipc::Response};
 
@@ -9,7 +10,7 @@ pub async fn list_objects(
     continuation_token: Option<String>,
     search: Option<String>,
     state: State<'_, StorageConnectionState>,
-) -> Result<StorageObjectPage, String> {
+) -> Result<StorageObjectPage, AppError> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     objects::search_page(
         &client,
@@ -27,7 +28,7 @@ pub async fn count_objects(
     prefix: String,
     search: Option<String>,
     state: State<'_, StorageConnectionState>,
-) -> Result<usize, String> {
+) -> Result<usize, AppError> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     objects::count_objects(&client, &bucket, &prefix, search.as_deref()).await
 }
@@ -37,7 +38,7 @@ pub async fn preview_image(
     connection_id: String,
     key: String,
     state: State<'_, StorageConnectionState>,
-) -> Result<Response, String> {
+) -> Result<Response, AppError> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     let bytes = objects::fetch_object_preview(&client, &bucket, &key, 8 * 1024 * 1024).await?;
     Ok(Response::new(bytes))
@@ -48,7 +49,7 @@ pub async fn preview_text(
     connection_id: String,
     key: String,
     state: State<'_, StorageConnectionState>,
-) -> Result<Response, String> {
+) -> Result<Response, AppError> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     let bytes = objects::fetch_object_preview(&client, &bucket, &key, 1024 * 1024).await?;
     Ok(Response::new(bytes))
@@ -59,7 +60,7 @@ pub async fn delete_objects(
     connection_id: String,
     keys: Vec<String>,
     state: State<'_, StorageConnectionState>,
-) -> Result<DeleteObjectsResult, String> {
+) -> Result<DeleteObjectsResult, AppError> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     objects::delete_objects(&client, &bucket, keys).await
 }
@@ -70,7 +71,7 @@ pub async fn create_folder(
     prefix: String,
     name: String,
     state: State<'_, StorageConnectionState>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     objects::create_folder(&client, &bucket, prefix, name).await
 }

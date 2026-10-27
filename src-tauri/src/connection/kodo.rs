@@ -1,16 +1,19 @@
 use crate::connection::manager::{PreparedConnection, new_connection_id};
 use crate::connection::model::{ConnectStorageRequest, SavedStorageConnection, StorageProvider};
+use crate::error::{AppError, ErrorCode};
 use aws_sdk_s3::{Client, config::Credentials};
 
 pub(crate) async fn prepare_connection(
     request: &ConnectStorageRequest,
-) -> Result<PreparedConnection, String> {
+) -> Result<PreparedConnection, AppError> {
     let region = request.region.trim();
     let bucket = request.bucket.trim();
     let access_key_id = request.access_key_id.trim();
     let secret_access_key = request.secret_access_key.trim();
     if access_key_id.is_empty() || secret_access_key.is_empty() {
-        return Err("请填写七牛云 AccessKey 和 SecretKey。".to_string());
+        return Err(
+            AppError::new(ErrorCode::ConnectionInvalidCredentials).param("provider", "Kodo")
+        );
     }
     let endpoint = kodo_endpoint(region, bucket, request.endpoint.as_deref())?;
     let credentials = Credentials::new(
@@ -55,7 +58,7 @@ pub(crate) async fn prepare_connection(
     })
 }
 
-fn kodo_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<String, String> {
+fn kodo_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<String, AppError> {
     if region.is_empty()
         || !region
             .bytes()
@@ -63,7 +66,7 @@ fn kodo_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<
         || region.starts_with('-')
         || region.ends_with('-')
     {
-        return Err("请填写有效的七牛 S3 Region ID，例如 cn-east-1。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidRegion).param("provider", "Kodo"));
     }
     // Existing Kodo spaces may not follow the current space creation rules.
     // Let the S3 service decide whether the supplied S3 space name exists.
@@ -74,12 +77,12 @@ fn kodo_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<
                 || matches!(byte, b'/' | b'\\' | b'?' | b'#')
         })
     {
-        return Err("请填写空间概览中的七牛 S3 空间名，且不要包含空白或路径符号。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidBucket).param("provider", "Kodo"));
     }
     let endpoint = format!("https://s3.{region}.qiniucs.com");
     let requested = requested.unwrap_or_default().trim().trim_end_matches('/');
     if !requested.is_empty() && requested != endpoint {
-        return Err("七牛 S3 Endpoint 必须与所选 Region ID 一致。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidEndpoint).param("provider", "Kodo"));
     }
     Ok(endpoint)
 }

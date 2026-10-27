@@ -9,6 +9,7 @@ import {
 } from '@phosphor-icons/react'
 import { ContextMenuGroup, ContextMenuItem } from '@/components/ui/context-menu'
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import i18n from '@/i18n'
 import { isTextPreviewable } from '@/lib/file-kind'
 import { useFileTransferStore } from '@/store/file-transfer-store'
 
@@ -41,29 +42,29 @@ export function FileActionsMenu({
     <MenuGroup>
       <MenuItem onClick={() => onDetails(item)}>
         <InfoIcon />
-        详情
+        {i18n.t('fileActions.details')}
       </MenuItem>
       {(item.kind === 'image' || (item.kind !== 'folder' && isTextPreviewable(item.name))) && (
         <MenuItem onClick={() => onPreview(item)}>
           <EyeIcon />
-          预览
+          {i18n.t('fileActions.preview')}
         </MenuItem>
       )}
       <MenuItem disabled={isDownloading} onClick={() => onDownload(item)}>
         <DownloadSimpleIcon />
-        下载
+        {i18n.t('common.download')}
       </MenuItem>
       <MenuItem onClick={() => onCopy(item)}>
         <CopyIcon />
-        复制
+        {i18n.t('common.copy')}
       </MenuItem>
       <MenuItem onClick={() => onMove(item)}>
         <ArrowsOutCardinalIcon />
-        移动
+        {i18n.t('common.move')}
       </MenuItem>
       <MenuItem variant="destructive" onClick={() => onDelete(item)}>
         <TrashIcon />
-        删除
+        {i18n.t('common.delete')}
       </MenuItem>
     </MenuGroup>
   )

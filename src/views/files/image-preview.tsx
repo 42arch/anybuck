@@ -1,9 +1,11 @@
 import { ArrowsOutIcon } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
+import { errorMessage } from '@/api/invoke'
 import { previewImage } from '@/api/objects'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
+import i18n from '@/i18n'
 
 export const MAX_IMAGE_PREVIEW_BYTES = 8 * 1024 * 1024
 
@@ -61,7 +63,7 @@ export function ImagePreview({ connectionId, objectKey, name, sizeBytes, mode = 
         })
         .catch((cause) => {
           if (active)
-            setPreview({ status: 'error', message: cause instanceof Error ? cause.message : String(cause) })
+            setPreview({ status: 'error', message: errorMessage(cause) })
         })
     }, 100)
 
@@ -75,13 +77,13 @@ export function ImagePreview({ connectionId, objectKey, name, sizeBytes, mode = 
 
   function renderPreview(large: boolean) {
     if (tooLarge)
-      return <p className="p-3 text-xs text-muted-foreground">图片超过 8 MiB，请下载后查看。</p>
+      return <p className="p-3 text-xs text-muted-foreground">{i18n.t('imagePreview.imageExceeds8MibDownload')}</p>
 
     if (preview.status === 'loading') {
       return (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Spinner />
-          正在读取图片…
+          {i18n.t('imagePreview.loadingImage')}
         </div>
       )
     }
@@ -89,8 +91,8 @@ export function ImagePreview({ connectionId, objectKey, name, sizeBytes, mode = 
     if (preview.status === 'error') {
       return (
         <div className="flex flex-col items-start gap-2 p-3 text-xs">
-          <p className="break-words text-muted-foreground">{`预览失败：${preview.message}`}</p>
-          <Button variant="outline" size="sm" onClick={retry}>重试</Button>
+          <p className="break-words text-muted-foreground">{i18n.t('dynamic.previewFailed', { message: preview.message })}</p>
+          <Button variant="outline" size="sm" onClick={retry}>{i18n.t('common.retry')}</Button>
         </div>
       )
     }
@@ -100,7 +102,7 @@ export function ImagePreview({ connectionId, objectKey, name, sizeBytes, mode = 
         src={preview.url}
         alt={name}
         className={large ? 'max-h-[75svh] max-w-full object-contain' : 'max-h-56 max-w-full object-contain'}
-        onError={() => setPreview({ status: 'error', message: '图片格式不受支持或文件已损坏。' })}
+        onError={() => setPreview({ status: 'error', message: i18n.t('imagePreview.unsupportedImageFormatDamagedFile') })}
       />
     )
   }
@@ -124,7 +126,7 @@ export function ImagePreview({ connectionId, objectKey, name, sizeBytes, mode = 
           {preview.status === 'ready' && !tooLarge && (
             <Button variant="outline" size="sm" className="self-start" onClick={() => setFullSizeOpen(true)}>
               <ArrowsOutIcon data-icon="inline-start" />
-              查看大图
+              {i18n.t('imagePreview.viewFullImage')}
             </Button>
           )}
         </div>
@@ -133,7 +135,7 @@ export function ImagePreview({ connectionId, objectKey, name, sizeBytes, mode = 
         <DialogContent className="max-h-[calc(100svh-2rem)] sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle className="truncate">{name}</DialogTitle>
-            <DialogDescription>图片预览</DialogDescription>
+            <DialogDescription>{i18n.t('imagePreview.imagePreview')}</DialogDescription>
           </DialogHeader>
           <div className="flex min-h-36 items-center justify-center overflow-auto rounded-md bg-muted/50 p-2">
             {renderPreview(true)}

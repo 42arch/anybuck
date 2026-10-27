@@ -1,4 +1,5 @@
 use crate::connection::manager::{StorageConnectionState, client_for_connection};
+use crate::error::AppError;
 use crate::storage::s3::objects::DownloadObjectsResult;
 use crate::storage::s3::transfer::{self, upload_file as s3_upload_file};
 use crate::transfers::planner;
@@ -16,7 +17,7 @@ pub async fn upload_file(
     prefix: String,
     local_path: String,
     state: State<'_, StorageConnectionState>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     s3_upload_file(
         &client,
@@ -37,13 +38,15 @@ pub async fn download_objects(
     keys: Vec<String>,
     destination_path: String,
     state: State<'_, StorageConnectionState>,
-) -> Result<DownloadObjectsResult, String> {
+) -> Result<DownloadObjectsResult, AppError> {
     let (client, bucket) = client_for_connection(&connection_id, state.inner())?;
     transfer::download_objects(&client, &bucket, prefix, keys, destination_path).await
 }
 
 #[tauri::command]
-pub fn list_transfer_tasks(state: State<'_, TransferManager>) -> Result<Vec<TransferTask>, String> {
+pub fn list_transfer_tasks(
+    state: State<'_, TransferManager>,
+) -> Result<Vec<TransferTask>, AppError> {
     service::list_transfer_tasks(state)
 }
 
@@ -56,7 +59,7 @@ pub async fn enqueue_uploads(
     upload_conflict_action: UploadConflictAction,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
-) -> Result<Vec<TransferTask>, String> {
+) -> Result<Vec<TransferTask>, AppError> {
     service::enqueue_uploads(
         app,
         connection_id,
@@ -80,7 +83,7 @@ pub async fn enqueue_object_operation(
     operation: String,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
-) -> Result<Vec<TransferTask>, String> {
+) -> Result<Vec<TransferTask>, AppError> {
     service::enqueue_object_operation(
         app,
         connection_id,
@@ -103,7 +106,7 @@ pub async fn prepare_download(
     destination_path: String,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
-) -> Result<DownloadPlanSummary, String> {
+) -> Result<DownloadPlanSummary, AppError> {
     planner::prepare_download(
         app,
         connection_id,
@@ -123,7 +126,7 @@ pub fn enqueue_download(
     conflict_action: String,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
-) -> Result<Vec<TransferTask>, String> {
+) -> Result<Vec<TransferTask>, AppError> {
     service::enqueue_download(app, plan_id, conflict_action, connections, manager)
 }
 
@@ -132,7 +135,7 @@ pub fn cancel_transfer_task(
     app: AppHandle,
     task_id: String,
     manager: State<'_, TransferManager>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     service::cancel_transfer_task(app, task_id, manager)
 }
 
@@ -142,7 +145,7 @@ pub fn retry_transfer_task(
     task_id: String,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
-) -> Result<TransferTask, String> {
+) -> Result<TransferTask, AppError> {
     service::retry_transfer_task(app, task_id, connections, manager)
 }
 
@@ -150,6 +153,6 @@ pub fn retry_transfer_task(
 pub fn clear_transfer_history(
     app: AppHandle,
     manager: State<'_, TransferManager>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     service::clear_transfer_history(app, manager)
 }

@@ -8,6 +8,7 @@ use aws_sdk_s3::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeMap,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -31,7 +32,37 @@ pub(crate) enum ProbeMode {
 pub(crate) struct ProbeCheck {
     id: &'static str,
     status: &'static str,
-    detail: String,
+    diagnostic: ProbeDiagnostic,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProbeDiagnostic {
+    code: String,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    params: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+impl ProbeDiagnostic {
+    fn new(code: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            params: BTreeMap::new(),
+            detail: None,
+        }
+    }
+
+    fn param(mut self, key: &str, value: impl ToString) -> Self {
+        self.params.insert(key.to_string(), value.to_string());
+        self
+    }
+
+    fn detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
 }
 
 #[derive(Serialize)]
@@ -42,34 +73,37 @@ pub(crate) struct ProbeReport {
     pub(crate) mode: ProbeMode,
     pub(crate) prefix: String,
     pub(crate) checks: Vec<ProbeCheck>,
-    pub(crate) cleanup_failures: Vec<String>,
+    pub(crate) cleanup_failures: Vec<ProbeDiagnostic>,
 }
 
 struct Failure {
     status: &'static str,
-    detail: String,
+    diagnostic: ProbeDiagnostic,
 }
 
 impl Failure {
-    fn failed(detail: impl Into<String>) -> Self {
+    fn failed(code: &'static str) -> Self {
         Self {
             status: "failed",
-            detail: detail.into(),
+            diagnostic: ProbeDiagnostic::new(code),
         }
+    }
+
+    fn detail(mut self, detail: impl Into<String>) -> Self {
+        self.diagnostic = self.diagnostic.detail(detail);
+        self
     }
 }
 
-fn upload_failure(message: String) -> Failure {
-    let status = if message.contains("AccessDenied") || message.contains("Forbidden") {
-        "permissionDenied"
-    } else if message.contains("NotImplemented") || message.contains("NotSupported") {
-        "unsupported"
-    } else {
-        "failed"
-    };
+fn upload_failure(error: crate::error::AppError) -> Failure {
+    let code = error.code_key();
     Failure {
-        status,
-        detail: message,
+        status: "failed",
+        diagnostic: ProbeDiagnostic {
+            code,
+            params: error.params,
+            detail: error.detail,
+        },
     }
 }
 
@@ -91,12 +125,15 @@ where
         _ => "failed",
     };
     let detail = match (code, http) {
-        (Some(code), Some(http)) => format!("{code}（HTTP {http}）"),
+        (Some(code), Some(http)) => format!("{code} (HTTP {http})"),
         (Some(code), None) => code.to_string(),
         (None, Some(http)) => format!("HTTP {http}"),
-        (None, None) => "请求未收到可识别的存储响应，请检查网络和 Endpoint。".to_string(),
+        (None, None) => String::new(),
     };
-    Failure { status, detail }
+    Failure {
+        status,
+        diagnostic: ProbeDiagnostic::new("remoteError").detail(detail),
+    }
 }
 
 fn is_precondition<E>(error: &SdkError<E>) -> bool
@@ -169,7 +206,7 @@ impl ProbeResources {
         key
     }
 
-    async fn cleanup(&mut self) -> Vec<String> {
+    async fn cleanup(&mut self) -> Vec<ProbeDiagnostic> {
         let mut failures = Vec::new();
         for (key, upload_id) in self.uploads.drain(..) {
             if let Err(error) = self
@@ -186,10 +223,12 @@ impl ProbeResources {
                     .raw_response()
                     .map(|response| response.status().as_u16());
                 if http != Some(404) {
-                    failures.push(format!(
-                        "未能中止 {key} 的分片 {upload_id}：{}",
-                        sdk_failure(&error).detail
-                    ));
+                    failures.push(
+                        ProbeDiagnostic::new("cleanupAbortFailed")
+                            .param("key", &key)
+                            .param("uploadId", &upload_id)
+                            .detail(sdk_failure(&error).diagnostic.detail.unwrap_or_default()),
+                    );
                 }
             }
         }
@@ -217,7 +256,11 @@ impl ProbeResources {
                 .send()
                 .await
             {
-                failures.push(format!("未能删除 {key}：{}", sdk_failure(&error).detail));
+                failures.push(
+                    ProbeDiagnostic::new("cleanupDeleteFailed")
+                        .param("key", &key)
+                        .detail(sdk_failure(&error).diagnostic.detail.unwrap_or_default()),
+                );
             }
         }
         match self
@@ -229,14 +272,13 @@ impl ProbeResources {
             .send()
             .await
         {
-            Ok(page) if !page.contents().is_empty() => {
-                failures.push(format!("前缀 {} 下仍有对象，请手动检查。", self.prefix))
-            }
-            Err(error) => failures.push(format!(
-                "无法确认前缀 {} 已清空：{}",
-                self.prefix,
-                sdk_failure(&error).detail
-            )),
+            Ok(page) if !page.contents().is_empty() => failures
+                .push(ProbeDiagnostic::new("cleanupObjectsRemain").param("prefix", &self.prefix)),
+            Err(error) => failures.push(
+                ProbeDiagnostic::new("cleanupVerifyFailed")
+                    .param("prefix", &self.prefix)
+                    .detail(sdk_failure(&error).diagnostic.detail.unwrap_or_default()),
+            ),
             _ => {}
         }
         failures
@@ -271,13 +313,17 @@ impl Drop for ProbeResources {
     }
 }
 
-fn record(checks: &mut Vec<ProbeCheck>, id: &'static str, result: Result<String, Failure>) -> bool {
+fn record(
+    checks: &mut Vec<ProbeCheck>,
+    id: &'static str,
+    result: Result<&'static str, Failure>,
+) -> bool {
     match result {
-        Ok(detail) => {
+        Ok(code) => {
             checks.push(ProbeCheck {
                 id,
                 status: "passed",
-                detail,
+                diagnostic: ProbeDiagnostic::new(code),
             });
             true
         }
@@ -285,18 +331,18 @@ fn record(checks: &mut Vec<ProbeCheck>, id: &'static str, result: Result<String,
             checks.push(ProbeCheck {
                 id,
                 status: error.status,
-                detail: error.detail,
+                diagnostic: error.diagnostic,
             });
             false
         }
     }
 }
 
-fn skipped(checks: &mut Vec<ProbeCheck>, id: &'static str, reason: &str) {
+fn skipped(checks: &mut Vec<ProbeCheck>, id: &'static str, code: &'static str) {
     checks.push(ProbeCheck {
         id,
         status: "skipped",
-        detail: reason.to_string(),
+        diagnostic: ProbeDiagnostic::new(code),
     });
 }
 
@@ -314,7 +360,7 @@ async fn read_exact(
         .await
         .map_err(|error| sdk_failure(&error))?;
     if head.content_length() != Some(expected.len() as i64) {
-        return Err(Failure::failed("HEAD 返回的对象大小与写入内容不一致。"));
+        return Err(Failure::failed("headSizeMismatch"));
     }
     let object = client
         .get_object()
@@ -327,15 +373,15 @@ async fn read_exact(
         .body
         .collect()
         .await
-        .map_err(|_| Failure::failed("读取对象内容失败。"))?
+        .map_err(|_| Failure::failed("objectReadFailed"))?
         .into_bytes();
     if bytes.as_ref() != expected {
-        return Err(Failure::failed("GET 返回的对象内容与写入内容不一致。"));
+        return Err(Failure::failed("getContentMismatch"));
     }
     Ok(())
 }
 
-async fn conditional_put(resources: &mut ProbeResources) -> Result<String, Failure> {
+async fn conditional_put(resources: &mut ProbeResources) -> Result<&'static str, Failure> {
     let key = resources.key("conditional-put.txt");
     let client = &resources.client;
     let bucket = &resources.bucket;
@@ -359,16 +405,14 @@ async fn conditional_put(resources: &mut ProbeResources) -> Result<String, Failu
     match rejected {
         Err(error) if is_precondition(&error) => {
             read_exact(client, bucket, &key, SAMPLE).await?;
-            Ok("首次条件写入成功；同名写入返回 412，原内容保持不变。".to_string())
+            Ok("conditionalPutProtected")
         }
         Err(error) => Err(conditional_failure(&error)),
-        Ok(_) => Err(Failure::failed(
-            "同名条件写入被接受；此服务不能安全执行“跳过同名”上传。",
-        )),
+        Ok(_) => Err(Failure::failed("conditionalPutUnsafe")),
     }
 }
 
-async fn pagination(resources: &mut ProbeResources) -> Result<String, Failure> {
+async fn pagination(resources: &mut ProbeResources) -> Result<&'static str, Failure> {
     let first = resources.key("pagination/one.txt");
     let second = resources.key("pagination/two.txt");
     for key in [&first, &second] {
@@ -394,7 +438,7 @@ async fn pagination(resources: &mut ProbeResources) -> Result<String, Failure> {
         .map_err(|error| sdk_failure(&error))?;
     let token = first_page
         .next_continuation_token()
-        .ok_or_else(|| Failure::failed("第一页未返回 continuation token。"))?;
+        .ok_or_else(|| Failure::failed("missingContinuationToken"))?;
     let second_page = resources
         .client
         .list_objects_v2()
@@ -412,12 +456,15 @@ async fn pagination(resources: &mut ProbeResources) -> Result<String, Failure> {
         .filter_map(|item| item.key())
         .collect::<Vec<_>>();
     if !listed.contains(&first.as_str()) || !listed.contains(&second.as_str()) {
-        return Err(Failure::failed("分页结果未包含两个测试对象。"));
+        return Err(Failure::failed("paginationMissingObjects"));
     }
-    Ok("max_keys=1 的两页均返回预期对象。".to_string())
+    Ok("paginationPassed")
 }
 
-async fn copy_delete(resources: &mut ProbeResources, source: &str) -> Result<String, Failure> {
+async fn copy_delete(
+    resources: &mut ProbeResources,
+    source: &str,
+) -> Result<&'static str, Failure> {
     let copied = resources.key("copied.txt");
     // CopySource must be URL-encoded when bucket or key contains reserved characters.
     let copy_source = format!("{}/{}", resources.bucket, source);
@@ -451,12 +498,12 @@ async fn copy_delete(resources: &mut ProbeResources, source: &str) -> Result<Str
             .raw_response()
             .is_some_and(|response| response.status().as_u16() == 404)
     }) {
-        return Err(Failure::failed("删除后 HEAD 未返回 404。"));
+        return Err(Failure::failed("deleteStillVisible"));
     }
-    Ok("CopyObject 内容一致，DeleteObject 后对象不可见。".to_string())
+    Ok("copyDeletePassed")
 }
 
-async fn multipart_upload(resources: &mut ProbeResources) -> Result<String, Failure> {
+async fn multipart_upload(resources: &mut ProbeResources) -> Result<&'static str, Failure> {
     let path = std::env::temp_dir().join(format!(
         "cloudstore-compat-{}-{}.bin",
         std::process::id(),
@@ -466,11 +513,11 @@ async fn multipart_upload(resources: &mut ProbeResources) -> Result<String, Fail
         .write(true)
         .create_new(true)
         .open(&path)
-        .map_err(|error| Failure::failed(format!("无法创建本地临时文件：{error}")))?;
+        .map_err(|error| Failure::failed("localTempFileFailed").detail(error.to_string()))?;
     let _local_file = LocalProbeFile(path.clone());
     let result = file
         .set_len(LARGE_SIZE)
-        .map_err(|error| Failure::failed(format!("无法准备本地临时文件：{error}")));
+        .map_err(|error| Failure::failed("localTempFileFailed").detail(error.to_string()));
     drop(file);
     result?;
     let key = resources.key(
@@ -489,7 +536,9 @@ async fn multipart_upload(resources: &mut ProbeResources) -> Result<String, Fail
     .await;
     match outcome {
         Ok(UploadOutcome::Uploaded(uploaded)) if uploaded == key => {}
-        Ok(_) => return Err(Failure::failed("分片上传未得到预期的新对象。")),
+        Ok(_) => {
+            return Err(Failure::failed("multipartMissingObject"));
+        }
         Err(error) => return Err(upload_failure(error)),
     }
     let head = resources
@@ -501,7 +550,7 @@ async fn multipart_upload(resources: &mut ProbeResources) -> Result<String, Fail
         .await
         .map_err(|error| sdk_failure(&error))?;
     if head.content_length() != Some(LARGE_SIZE as i64) {
-        return Err(Failure::failed("完成分片后对象大小不正确。"));
+        return Err(Failure::failed("multipartSizeMismatch"));
     }
     let body = resources
         .client
@@ -515,15 +564,15 @@ async fn multipart_upload(resources: &mut ProbeResources) -> Result<String, Fail
         .body
         .collect()
         .await
-        .map_err(|_| Failure::failed("分片对象的范围读取失败。"))?
+        .map_err(|_| Failure::failed("multipartRangeReadFailed"))?
         .into_bytes();
     if body.len() != 32 || body.iter().any(|byte| *byte != 0) {
-        return Err(Failure::failed("分片对象读回的数据不正确。"));
+        return Err(Failure::failed("multipartContentMismatch"));
     }
-    Ok("使用应用上传路径完成 100 MiB 分片上传，并验证大小与范围读取。".to_string())
+    Ok("multipartUploadPassed")
 }
 
-async fn multipart_abort(resources: &mut ProbeResources) -> Result<String, Failure> {
+async fn multipart_abort(resources: &mut ProbeResources) -> Result<&'static str, Failure> {
     let key = resources.key("aborted.bin");
     let started = resources
         .client
@@ -535,7 +584,7 @@ async fn multipart_abort(resources: &mut ProbeResources) -> Result<String, Failu
         .map_err(|error| sdk_failure(&error))?;
     let upload_id = started
         .upload_id()
-        .ok_or_else(|| Failure::failed("服务端未返回 upload ID。"))?
+        .ok_or_else(|| Failure::failed("missingUploadId"))?
         .to_string();
     resources.uploads.push((key.clone(), upload_id.clone()));
     resources
@@ -559,10 +608,10 @@ async fn multipart_abort(resources: &mut ProbeResources) -> Result<String, Failu
         .await
         .map_err(|error| sdk_failure(&error))?;
     resources.uploads.retain(|(_, id)| id != &upload_id);
-    Ok("创建并上传 5 MiB 分片后成功中止。".to_string())
+    Ok("multipartAbortPassed")
 }
 
-async fn conditional_complete(resources: &mut ProbeResources) -> Result<String, Failure> {
+async fn conditional_complete(resources: &mut ProbeResources) -> Result<&'static str, Failure> {
     let key = resources.key("conditional-complete.txt");
     resources
         .client
@@ -583,7 +632,7 @@ async fn conditional_complete(resources: &mut ProbeResources) -> Result<String, 
         .map_err(|error| sdk_failure(&error))?;
     let upload_id = started
         .upload_id()
-        .ok_or_else(|| Failure::failed("服务端未返回 upload ID。"))?
+        .ok_or_else(|| Failure::failed("missingUploadId"))?
         .to_string();
     resources.uploads.push((key.clone(), upload_id.clone()));
     let part = resources
@@ -599,7 +648,7 @@ async fn conditional_complete(resources: &mut ProbeResources) -> Result<String, 
         .map_err(|error| sdk_failure(&error))?;
     let etag = part
         .e_tag()
-        .ok_or_else(|| Failure::failed("上传分片未返回 ETag。"))?;
+        .ok_or_else(|| Failure::failed("missingPartEtag"))?;
     let parts = CompletedMultipartUpload::builder()
         .parts(CompletedPart::builder().part_number(1).e_tag(etag).build())
         .build();
@@ -616,12 +665,10 @@ async fn conditional_complete(resources: &mut ProbeResources) -> Result<String, 
     match result {
         Err(error) if is_precondition(&error) => {
             read_exact(&resources.client, &resources.bucket, &key, SAMPLE).await?;
-            Ok("同名分片完成返回 412，原对象未被覆盖。".to_string())
+            Ok("conditionalCompleteProtected")
         }
         Err(error) => Err(conditional_failure(&error)),
-        Ok(_) => Err(Failure::failed(
-            "同名分片完成被接受；此服务不能安全执行分片上传的“跳过同名”。",
-        )),
+        Ok(_) => Err(Failure::failed("conditionalCompleteUnsafe")),
     }
 }
 
@@ -651,10 +698,8 @@ pub(crate) async fn run_probe(
         &mut checks,
         "list",
         match initial {
-            Ok(page) if page.contents().is_empty() => {
-                Ok("隔离前缀可列举，且未发现已有对象。".to_string())
-            }
-            Ok(_) => Err(Failure::failed("随机测试前缀已有对象，已停止写入。")),
+            Ok(page) if page.contents().is_empty() => Ok("isolatedPrefixPassed"),
+            Ok(_) => Err(Failure::failed("isolatedPrefixOccupied")),
             Err(error) => Err(sdk_failure(&error)),
         },
     );
@@ -671,7 +716,7 @@ pub(crate) async fn run_probe(
                 .await
                 .map_err(|error| sdk_failure(&error))?;
             read_exact(&resources.client, &bucket, &source, SAMPLE).await?;
-            Ok("PUT、HEAD、GET 成功且内容一致。".to_string())
+            Ok("basicReadWritePassed")
         }
         .await;
         let basic_ok = record(&mut checks, "basicReadWrite", basic);
@@ -688,8 +733,8 @@ pub(crate) async fn run_probe(
                 copy_delete(&mut resources, &source).await,
             );
         } else {
-            skipped(&mut checks, "pagination", "基础写入或读取失败。");
-            skipped(&mut checks, "copyDelete", "基础写入或读取失败。");
+            skipped(&mut checks, "pagination", "basicReadWriteRequired");
+            skipped(&mut checks, "copyDelete", "basicReadWriteRequired");
         }
         if matches!(mode, ProbeMode::Full) {
             record(
@@ -715,11 +760,11 @@ pub(crate) async fn run_probe(
             "pagination",
             "copyDelete",
         ] {
-            skipped(&mut checks, id, "无法安全确认隔离前缀为空。");
+            skipped(&mut checks, id, "isolatedPrefixRequired");
         }
         if matches!(mode, ProbeMode::Full) {
             for id in ["multipartUpload", "multipartAbort", "conditionalComplete"] {
-                skipped(&mut checks, id, "无法安全确认隔离前缀为空。");
+                skipped(&mut checks, id, "isolatedPrefixRequired");
             }
         }
     }
@@ -740,7 +785,7 @@ pub(crate) async fn run_probe(
 
 #[cfg(test)]
 mod tests {
-    use super::probe_prefix;
+    use super::{ProbeCheck, ProbeDiagnostic, probe_prefix};
 
     #[test]
     fn probe_prefix_is_unique_and_isolated() {
@@ -749,5 +794,20 @@ mod tests {
         assert!(first.starts_with("__cloudstore-compat/"));
         assert!(first.ends_with('/'));
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn probe_diagnostic_serializes_code_params_and_raw_detail() {
+        let check = ProbeCheck {
+            id: "list",
+            status: "failed",
+            diagnostic: ProbeDiagnostic::new("cleanupDeleteFailed")
+                .param("key", "test-object")
+                .detail("HTTP 403"),
+        };
+        let value = serde_json::to_value(check).unwrap();
+        assert_eq!(value["diagnostic"]["code"], "cleanupDeleteFailed");
+        assert_eq!(value["diagnostic"]["params"]["key"], "test-object");
+        assert_eq!(value["diagnostic"]["detail"], "HTTP 403");
     }
 }

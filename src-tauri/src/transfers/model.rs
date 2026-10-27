@@ -35,6 +35,8 @@ pub struct TransferTask {
     pub status: String,
     pub phase: Option<String>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub error_code: Option<String>,
     pub total_bytes: Option<u64>,
     pub transferred_bytes: u64,
     pub created_at: u64,
@@ -96,6 +98,7 @@ pub(crate) fn new_task(
         status: "queued".to_string(),
         phase: None,
         error: None,
+        error_code: None,
         total_bytes: None,
         transferred_bytes: 0,
         created_at: timestamp,

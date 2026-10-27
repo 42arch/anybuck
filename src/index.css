@@ -17,6 +17,17 @@
     --color-sidebar-foreground: var(--sidebar-foreground);
     --color-sidebar: var(--sidebar);
     --color-sidebar-surface: var(--sidebar-surface);
+    --color-file-folder-surface: var(--file-folder-surface);
+    --color-file-image-surface: var(--file-image-surface);
+    --color-file-document-surface: var(--file-document-surface);
+    --color-file-archive-surface: var(--file-archive-surface);
+    --color-file-surface: var(--file-surface);
+    --color-status-connected: var(--status-connected);
+    --color-status-connected-surface: var(--status-connected-surface);
+    --color-status-connected-border: var(--status-connected-border);
+    --color-status-disconnected: var(--status-disconnected);
+    --color-status-disconnected-surface: var(--status-disconnected-surface);
+    --color-status-disconnected-border: var(--status-disconnected-border);
     --color-chart-5: var(--chart-5);
     --color-chart-4: var(--chart-4);
     --color-chart-3: var(--chart-3);
@@ -74,15 +85,26 @@
     --chart-4: #9c81c5;
     --chart-5: #7994d2;
     --radius: 0.625rem;
-    --sidebar: #111b2a;
-    --sidebar-surface: #1b2635;
-    --sidebar-foreground: #b7c1cf;
-    --sidebar-primary: #f1743d;
+    --sidebar: #ffffff;
+    --sidebar-surface: #f7f8fa;
+    --sidebar-foreground: #536174;
+    --sidebar-primary: #a45d2c;
     --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: #2b3a4d;
-    --sidebar-accent-foreground: #ffffff;
-    --sidebar-border: #2b3645;
+    --sidebar-accent: #fff2e9;
+    --sidebar-accent-foreground: #7d421f;
+    --sidebar-border: #e9edf1;
     --sidebar-ring: #e99668;
+    --file-folder-surface: #fff3db;
+    --file-image-surface: #edf2fd;
+    --file-document-surface: #fdf0ef;
+    --file-archive-surface: #f4eff9;
+    --file-surface: #eff5f6;
+    --status-connected: #2d785b;
+    --status-connected-surface: #eaf8f2;
+    --status-connected-border: #d8efe4;
+    --status-disconnected: #a45d2c;
+    --status-disconnected-surface: #fff4e9;
+    --status-disconnected-border: #ffe7d3;
 }
 
 .dark {
@@ -118,6 +140,17 @@
     --sidebar-accent-foreground: #ffffff;
     --sidebar-border: #2b3645;
     --sidebar-ring: #e99668;
+    --file-folder-surface: #3a3225;
+    --file-image-surface: #273751;
+    --file-document-surface: #3c2b33;
+    --file-archive-surface: #352d45;
+    --file-surface: #263c44;
+    --status-connected: #70c6a4;
+    --status-connected-surface: #1e3a36;
+    --status-connected-border: #326052;
+    --status-disconnected: #ffb48c;
+    --status-disconnected-surface: #3b3540;
+    --status-disconnected-border: #654638;
 }
 
 @layer base {

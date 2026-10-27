@@ -1,9 +1,11 @@
 import { FolderOpenIcon } from '@phosphor-icons/react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useState } from 'react'
+import { errorMessage } from '@/api/invoke'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
+import i18n from '@/i18n'
 import { showNotice } from '@/lib/notice'
 import { useSettingsStore } from '@/store/settings-store'
 
@@ -21,16 +23,16 @@ export function DownloadPathSettings({ onNotice = showNotice }: DownloadPathSett
       const path = await open({
         directory: true,
         multiple: false,
-        title: '选择默认下载路径',
+        title: i18n.t('downloadSettings.chooseDefaultDownloadFolder'),
         defaultPath: defaultDownloadPath || undefined,
       })
       if (typeof path === 'string') {
         setDefaultDownloadPath(path)
-        onNotice('默认下载路径已更新。')
+        onNotice(i18n.t('downloadSettings.defaultDownloadFolderUpdated'))
       }
     }
     catch (cause) {
-      onNotice(`无法选择下载路径：${cause instanceof Error ? cause.message : String(cause)}`)
+      onNotice(i18n.t('dynamic.pathSelectionFailed', { message: errorMessage(cause) }))
     }
     finally {
       setIsChoosingDownloadPath(false)
@@ -38,22 +40,21 @@ export function DownloadPathSettings({ onNotice = showNotice }: DownloadPathSett
   }
 
   return (
-    <section id="settings-download-path" className="flex scroll-mt-4 flex-col gap-2">
+    <section className="flex flex-col gap-2">
       <div className="flex flex-col gap-1 pb-3">
-        <h2 className="text-base font-semibold">默认下载路径</h2>
-        <p className="text-xs text-muted-foreground">文件和文件夹下载任务的默认保存目录。该配置保存在本机。</p>
+        <h2 className="text-base font-semibold">{i18n.t('settings.downloadPath')}</h2>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <Input
-          aria-label="默认下载路径"
-          value={defaultDownloadPath || '尚未设置'}
+          aria-label={i18n.t('settings.downloadPath')}
+          value={defaultDownloadPath || i18n.t('downloadSettings.notSet')}
           readOnly
           className="min-w-0"
           title={defaultDownloadPath || undefined}
         />
         <Button className="shrink-0" variant="outline" disabled={isChoosingDownloadPath} onClick={() => void chooseDownloadPath()}>
           {isChoosingDownloadPath ? <Spinner data-icon="inline-start" /> : <FolderOpenIcon data-icon="inline-start" />}
-          选择目录
+          {i18n.t('downloadSettings.chooseFolder')}
         </Button>
         {defaultDownloadPath && (
           <Button
@@ -62,10 +63,10 @@ export function DownloadPathSettings({ onNotice = showNotice }: DownloadPathSett
             disabled={isChoosingDownloadPath}
             onClick={() => {
               setDefaultDownloadPath('')
-              onNotice('默认下载路径已清除。')
+              onNotice(i18n.t('downloadSettings.defaultDownloadFolderCleared'))
             }}
           >
-            清除
+            {i18n.t('common.clear')}
           </Button>
         )}
       </div>

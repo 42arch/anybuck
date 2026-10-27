@@ -1,4 +1,5 @@
 use crate::connection::model::{SavedStorageConnection, SavedStorageCredentials};
+use crate::error::{AppError, ErrorCode};
 use crate::security::credentials::{credential_entry, keyring_error, restore_previous_secret};
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager};
@@ -9,7 +10,7 @@ const LEGACY_PROFILE_FILE: &str = "r2-connection.json";
 
 pub(crate) fn load_saved_connections(
     app: &AppHandle,
-) -> Result<Vec<SavedStorageConnection>, String> {
+) -> Result<Vec<SavedStorageConnection>, AppError> {
     let path = profile_path(app)?;
     let file_path = if path.exists() {
         path
@@ -18,14 +19,18 @@ pub(crate) fn load_saved_connections(
     };
     match fs::read(file_path) {
         Ok(contents) => {
-            let value: serde_json::Value = serde_json::from_slice(&contents)
-                .map_err(|error| format!("已保存的存储连接信息无法读取：{error}"))?;
+            let value: serde_json::Value = serde_json::from_slice(&contents).map_err(|error| {
+                AppError::with_detail(ErrorCode::ConnectionLoadFailed, error.to_string())
+            })?;
             if value.is_array() {
-                serde_json::from_value(value)
-                    .map_err(|error| format!("已保存的存储连接信息无法读取：{error}"))
+                serde_json::from_value(value).map_err(|error| {
+                    AppError::with_detail(ErrorCode::ConnectionLoadFailed, error.to_string())
+                })
             } else {
-                let mut profile: SavedStorageConnection = serde_json::from_value(value)
-                    .map_err(|error| format!("已保存的存储连接信息无法读取：{error}"))?;
+                let mut profile: SavedStorageConnection =
+                    serde_json::from_value(value).map_err(|error| {
+                        AppError::with_detail(ErrorCode::ConnectionLoadFailed, error.to_string())
+                    })?;
                 // Migrate the previous single-profile format and preserve its keyring entry.
                 profile.id = KEYRING_USERNAME.to_string();
                 if profile.name.is_empty() {
@@ -35,7 +40,10 @@ pub(crate) fn load_saved_connections(
             }
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(error) => Err(format!("无法读取存储连接信息：{error}")),
+        Err(error) => Err(AppError::with_detail(
+            ErrorCode::ConnectionLoadFailed,
+            error.to_string(),
+        )),
     }
 }
 
@@ -43,19 +51,23 @@ pub(crate) fn save_connection(
     app: &AppHandle,
     profile: &SavedStorageConnection,
     credentials: &SavedStorageCredentials,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let path = profile_path(app)?;
     let directory = path
         .parent()
-        .ok_or_else(|| "应用数据目录无效。".to_string())?;
-    fs::create_dir_all(directory).map_err(|error| format!("无法创建应用数据目录：{error}"))?;
+        .ok_or_else(|| AppError::new(ErrorCode::ConnectionDataUnavailable))?;
+    fs::create_dir_all(directory).map_err(|error| {
+        AppError::with_detail(ErrorCode::ConnectionDataUnavailable, error.to_string())
+    })?;
     let mut profiles = load_saved_connections(app)?;
     profiles.retain(|saved| saved.id != profile.id);
     profiles.push(profile.clone());
-    let profile_bytes = serde_json::to_vec(&profiles)
-        .map_err(|error| format!("无法序列化存储连接信息：{error}"))?;
-    let credentials = serde_json::to_string(credentials)
-        .map_err(|error| format!("无法序列化系统凭证：{error}"))?;
+    let profile_bytes = serde_json::to_vec(&profiles).map_err(|error| {
+        AppError::with_detail(ErrorCode::ConnectionSaveFailed, error.to_string())
+    })?;
+    let credentials = serde_json::to_string(credentials).map_err(|error| {
+        AppError::with_detail(ErrorCode::ConnectionSaveFailed, error.to_string())
+    })?;
     let previous_profile = fs::read(&path).ok();
     let entry = credential_entry(profile.provider, &profile.id)?;
     let previous_secret = match entry.get_password() {
@@ -68,7 +80,10 @@ pub(crate) fn save_connection(
     if let Err(error) = fs::write(&path, profile_bytes) {
         restore_previous_secret(&entry, previous_secret.as_deref());
         restore_previous_profile(&path, previous_profile.as_deref());
-        return Err(format!("无法保存存储连接信息：{error}"));
+        return Err(AppError::with_detail(
+            ErrorCode::ConnectionSaveFailed,
+            error.to_string(),
+        ));
     }
     Ok(())
 }
@@ -77,26 +92,32 @@ pub(crate) fn rename_saved_connection(
     app: &AppHandle,
     connection_id: &str,
     name: &str,
-) -> Result<SavedStorageConnection, String> {
+) -> Result<SavedStorageConnection, AppError> {
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 100 {
-        return Err("连接名称应为 1–100 个字符。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidName));
     }
     let mut profiles = load_saved_connections(app)?;
     let profile = profiles
         .iter_mut()
         .find(|profile| profile.id == connection_id)
-        .ok_or_else(|| "已保存的连接不存在，请刷新连接列表后重试。".to_string())?;
+        .ok_or_else(|| AppError::new(ErrorCode::ConnectionNotFound))?;
     profile.name = name.to_string();
     let updated = profile.clone();
-    let contents = serde_json::to_vec(&profiles)
-        .map_err(|error| format!("无法序列化存储连接信息：{error}"))?;
+    let contents = serde_json::to_vec(&profiles).map_err(|error| {
+        AppError::with_detail(ErrorCode::ConnectionSaveFailed, error.to_string())
+    })?;
     let path = profile_path(app)?;
-    fs::write(&path, contents).map_err(|error| format!("无法更新已保存的连接信息：{error}"))?;
+    fs::write(&path, contents).map_err(|error| {
+        AppError::with_detail(ErrorCode::ConnectionUpdateFailed, error.to_string())
+    })?;
     Ok(updated)
 }
 
-pub(crate) fn remove_saved_connection(app: &AppHandle, connection_id: &str) -> Result<(), String> {
+pub(crate) fn remove_saved_connection(
+    app: &AppHandle,
+    connection_id: &str,
+) -> Result<(), AppError> {
     let path = profile_path(app)?;
     let previous_profile = fs::read(&path).ok();
     let mut profiles = load_saved_connections(app)?;
@@ -109,11 +130,16 @@ pub(crate) fn remove_saved_connection(app: &AppHandle, connection_id: &str) -> R
     };
     profiles.retain(|profile| profile.id != connection_id);
     if profiles.is_empty() {
-        fs::remove_file(&path).map_err(|error| format!("无法删除已保存的连接信息：{error}"))?;
+        fs::remove_file(&path).map_err(|error| {
+            AppError::with_detail(ErrorCode::ConnectionDeleteFailed, error.to_string())
+        })?;
     } else {
-        let contents = serde_json::to_vec(&profiles)
-            .map_err(|error| format!("无法序列化存储连接信息：{error}"))?;
-        fs::write(&path, contents).map_err(|error| format!("无法更新已保存的连接信息：{error}"))?;
+        let contents = serde_json::to_vec(&profiles).map_err(|error| {
+            AppError::with_detail(ErrorCode::ConnectionSaveFailed, error.to_string())
+        })?;
+        fs::write(&path, contents).map_err(|error| {
+            AppError::with_detail(ErrorCode::ConnectionUpdateFailed, error.to_string())
+        })?;
     }
     let entry = credential_entry(provider, connection_id)?;
     if let Err(error) = entry.delete_credential()
@@ -125,18 +151,22 @@ pub(crate) fn remove_saved_connection(app: &AppHandle, connection_id: &str) -> R
     Ok(())
 }
 
-fn profile_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn profile_path(app: &AppHandle) -> Result<PathBuf, AppError> {
     app.path()
         .app_data_dir()
         .map(|directory| directory.join(PROFILE_FILE))
-        .map_err(|error| format!("无法定位应用数据目录：{error}"))
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::ConnectionDataUnavailable, error.to_string())
+        })
 }
 
-fn legacy_profile_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn legacy_profile_path(app: &AppHandle) -> Result<PathBuf, AppError> {
     app.path()
         .app_data_dir()
         .map(|directory| directory.join(LEGACY_PROFILE_FILE))
-        .map_err(|error| format!("无法定位应用数据目录：{error}"))
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::ConnectionDataUnavailable, error.to_string())
+        })
 }
 
 fn restore_previous_profile(path: &PathBuf, previous_profile: Option<&[u8]>) {

@@ -1,9 +1,10 @@
 import { Dialog as SheetPrimitive } from '@base-ui/react/dialog'
 import { XIcon } from '@phosphor-icons/react'
 import { cn } from 'cn'
-
 import * as React from 'react'
+
 import { Button } from '@/components/ui/button'
+import i18n from '@/i18n'
 
 function Sheet({ ...props }: SheetPrimitive.Root.Props) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -69,7 +70,7 @@ function SheetContent({
             )}
           >
             <XIcon />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{i18n.t('common.close')}</span>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Popup>

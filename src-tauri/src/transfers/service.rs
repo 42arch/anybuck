@@ -1,6 +1,7 @@
 use crate::connection::manager::{
     StorageConnectionState, client_for_connection, connections_share_bucket,
 };
+use crate::error::{AppError, ErrorCode};
 use crate::storage::s3::copy;
 use crate::transfers::manager::TransferManager;
 use crate::transfers::model::{
@@ -13,13 +14,13 @@ use tauri::{AppHandle, Emitter, State};
 
 pub(crate) fn list_transfer_tasks(
     state: State<'_, TransferManager>,
-) -> Result<Vec<TransferTask>, String> {
+) -> Result<Vec<TransferTask>, AppError> {
     state
         .inner
         .tasks
         .lock()
         .map(|tasks| tasks.clone())
-        .map_err(|_| "传输状态不可用。".to_string())
+        .map_err(|_| AppError::new(ErrorCode::TransferListFailed))
 }
 
 pub(crate) async fn enqueue_uploads(
@@ -30,14 +31,16 @@ pub(crate) async fn enqueue_uploads(
     upload_conflict_action: UploadConflictAction,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
-) -> Result<Vec<TransferTask>, String> {
+) -> Result<Vec<TransferTask>, AppError> {
     if local_paths.is_empty() {
         return Ok(Vec::new());
     }
     let (client, bucket) = client_for_connection(&connection_id, connections.inner())?;
     let roots = tokio::task::spawn_blocking(move || plan_uploads(local_paths, &prefix))
         .await
-        .map_err(|error| format!("无法扫描所选文件夹：{error}"))??;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferInvalidSource, error.to_string())
+        })??;
 
     if upload_conflict_action != UploadConflictAction::KeepBoth {
         let mut names = HashSet::new();
@@ -46,7 +49,7 @@ pub(crate) async fn enqueue_uploads(
             .flat_map(|root| &root.items)
             .any(|item| !names.insert(&item.key))
         {
-            return Err("所选项目会上传到相同对象 Key；请分开上传或选择“保留两份”。".to_string());
+            return Err(AppError::new(ErrorCode::TransferDuplicateKeys));
         }
     }
 
@@ -122,9 +125,9 @@ pub(crate) async fn enqueue_object_operation(
     operation: String,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
-) -> Result<Vec<TransferTask>, String> {
+) -> Result<Vec<TransferTask>, AppError> {
     if !matches!(operation.as_str(), "copy" | "move") {
-        return Err("无效的对象操作。".to_string());
+        return Err(AppError::new(ErrorCode::TransferInvalidOperation));
     }
     if keys.is_empty() {
         return Ok(Vec::new());
@@ -162,7 +165,7 @@ pub(crate) async fn enqueue_object_operation(
             .trim_end_matches('/')
             .rsplit('/')
             .next()
-            .unwrap_or("对象");
+            .unwrap_or("Object");
         let mut task = new_task(
             None,
             &task_operation,
@@ -180,7 +183,8 @@ pub(crate) async fn enqueue_object_operation(
         if let Some(error) = root.error {
             manager.update_task(&app, &task.id, "failed", Some(error.clone()));
             task.status = "failed".to_string();
-            task.error = Some(error);
+            task.error_code = Some(error.code_key());
+            task.error = error.detail;
             created.push(task);
             continue;
         }
@@ -192,7 +196,7 @@ pub(crate) async fn enqueue_object_operation(
                     .trim_end_matches('/')
                     .rsplit('/')
                     .next()
-                    .unwrap_or("对象");
+                    .unwrap_or("Object");
                 let mut child = new_task(
                     Some(task.id.clone()),
                     &operation,
@@ -245,17 +249,17 @@ pub(crate) fn enqueue_download(
     conflict_action: String,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
-) -> Result<Vec<TransferTask>, String> {
+) -> Result<Vec<TransferTask>, AppError> {
     if !matches!(conflict_action.as_str(), "overwrite" | "skip") {
-        return Err("无效的文件冲突处理方式。".to_string());
+        return Err(AppError::new(ErrorCode::TransferInvalidConflictAction));
     }
     let plan = manager
         .inner
         .plans
         .lock()
-        .map_err(|_| "传输状态不可用。".to_string())?
+        .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?
         .remove(&plan_id)
-        .ok_or_else(|| "下载计划已过期，请重新选择文件。".to_string())?;
+        .ok_or_else(|| AppError::new(ErrorCode::TransferPlanFailed))?;
     let (client, bucket) = client_for_connection(&plan.connection_id, connections.inner())?;
     let mut tasks = Vec::new();
     for parent in plan.parents {
@@ -320,15 +324,15 @@ pub(crate) fn cancel_transfer_task(
     app: AppHandle,
     task_id: String,
     manager: State<'_, TransferManager>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let child_ids: Vec<String> = {
         let tasks = manager
             .inner
             .tasks
             .lock()
-            .map_err(|_| "传输状态不可用。".to_string())?;
+            .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?;
         let Some(task) = tasks.iter().find(|task| task.id == task_id) else {
-            return Err("找不到传输任务。".to_string());
+            return Err(AppError::new(ErrorCode::TransferTaskNotFound));
         };
         if task.parent_id.is_none() && is_folder_operation(&task.operation) {
             tasks
@@ -373,7 +377,7 @@ pub(crate) fn cancel_transfer_task(
             handles.remove(&id);
         }
         let warning = if was_running && is_cloud_copy {
-            Some("云端请求可能已完成，请检查源位置与目标位置后再重试。".to_string())
+            Some(AppError::new(ErrorCode::TransferOutcomeUncertain))
         } else {
             None
         };
@@ -387,31 +391,31 @@ pub(crate) fn retry_transfer_task(
     task_id: String,
     connections: State<'_, StorageConnectionState>,
     manager: State<'_, TransferManager>,
-) -> Result<TransferTask, String> {
+) -> Result<TransferTask, AppError> {
     let original = manager
         .inner
         .tasks
         .lock()
-        .map_err(|_| "传输状态不可用。".to_string())?
+        .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?
         .iter()
         .find(|task| task.id == task_id)
         .cloned()
-        .ok_or_else(|| "找不到传输任务。".to_string())?;
+        .ok_or_else(|| AppError::new(ErrorCode::TransferTaskNotFound))?;
     if is_folder_operation(&original.operation) {
-        return Err("请在文件夹任务中重试失败的文件。".to_string());
+        return Err(AppError::new(ErrorCode::TransferRetryNotAllowed));
     }
     if matches!(original.operation.as_str(), "copy" | "move") && original.phase.is_none() {
-        return Err("请重新选择目标位置并创建任务。".to_string());
+        return Err(AppError::new(ErrorCode::TransferRetryNotAllowed));
     }
     if !matches!(
         original.status.as_str(),
         "failed" | "cancelled" | "interrupted"
     ) {
-        return Err("只有失败、中断或已取消的任务可以重试。".to_string());
+        return Err(AppError::new(ErrorCode::TransferRetryNotAllowed));
     }
     let (client, bucket) = client_for_connection(&original.connection_id, connections.inner())?;
     if !original.bucket.is_empty() && original.bucket != bucket {
-        return Err("连接的 Bucket 已变化，请重新创建传输任务。".to_string());
+        return Err(AppError::new(ErrorCode::TransferBucketChanged));
     }
     let target = if matches!(original.operation.as_str(), "copy" | "move") {
         let target_id = if original.destination_connection_id.is_empty() {
@@ -427,13 +431,14 @@ pub(crate) fn retry_transfer_task(
         && !original.destination_bucket.is_empty()
         && original.destination_bucket.as_str() != target_bucket
     {
-        return Err("目标连接的 Bucket 已变化，请重新创建传输任务。".to_string());
+        return Err(AppError::new(ErrorCode::TransferDestinationBucketChanged));
     }
     let mut retry = original.clone();
     retry.id = make_id();
     retry.parent_id = None;
     retry.status = "queued".to_string();
     retry.error = None;
+    retry.error_code = None;
     retry.transferred_bytes = if retry.operation == "move" && retry.checkpoint.is_some() {
         retry.total_bytes.unwrap_or(0)
     } else {
@@ -462,12 +467,12 @@ pub(crate) fn retry_transfer_task(
 pub(crate) fn clear_transfer_history(
     app: AppHandle,
     manager: State<'_, TransferManager>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let mut tasks = manager
         .inner
         .tasks
         .lock()
-        .map_err(|_| "传输状态不可用。".to_string())?;
+        .map_err(|_| AppError::new(ErrorCode::TransferListFailed))?;
     let removed: std::collections::HashSet<_> = tasks
         .iter()
         .filter(|task| task.parent_id.is_none() && is_terminal(&task.status))

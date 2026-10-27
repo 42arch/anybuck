@@ -1,4 +1,5 @@
 use super::format_storage_error;
+use crate::error::{AppError, ErrorCode};
 use aws_sdk_s3::{
     Client,
     types::{Delete, ObjectIdentifier},
@@ -47,7 +48,7 @@ pub(crate) async fn fetch_page(
     bucket: &str,
     prefix: &str,
     continuation_token: Option<&str>,
-) -> Result<StorageObjectPage, String> {
+) -> Result<StorageObjectPage, AppError> {
     let normalized_prefix = if prefix.is_empty() {
         String::new()
     } else {
@@ -63,10 +64,12 @@ pub(crate) async fn fetch_page(
         request = request.continuation_token(token);
     }
 
-    let output = request
-        .send()
-        .await
-        .map_err(|error| format_storage_error(&error))?;
+    let output = request.send().await.map_err(|error| {
+        AppError::with_detail(
+            ErrorCode::StorageRequestFailed,
+            format_storage_error(&error),
+        )
+    })?;
     let mut objects = Vec::new();
 
     for common_prefix in output.common_prefixes() {
@@ -124,7 +127,7 @@ pub(crate) async fn search_page(
     prefix: &str,
     continuation_token: Option<&str>,
     search: &str,
-) -> Result<StorageObjectPage, String> {
+) -> Result<StorageObjectPage, AppError> {
     let search = search.trim().to_lowercase();
     if search.is_empty() {
         return fetch_page(client, bucket, prefix, continuation_token).await;
@@ -173,7 +176,7 @@ pub(crate) async fn count_objects(
     bucket: &str,
     prefix: &str,
     search: Option<&str>,
-) -> Result<usize, String> {
+) -> Result<usize, AppError> {
     let normalized_prefix = if prefix.is_empty() {
         String::new()
     } else {
@@ -194,10 +197,12 @@ pub(crate) async fn count_objects(
             request = request.continuation_token(token);
         }
 
-        let output = request
-            .send()
-            .await
-            .map_err(|error| format_storage_error(&error))?;
+        let output = request.send().await.map_err(|error| {
+            AppError::with_detail(
+                ErrorCode::StorageRequestFailed,
+                format_storage_error(&error),
+            )
+        })?;
         total += output
             .common_prefixes()
             .iter()
@@ -237,9 +242,9 @@ pub(crate) async fn fetch_object_preview(
     bucket: &str,
     key: &str,
     max_bytes: usize,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, AppError> {
     if key.is_empty() || key.ends_with('/') {
-        return Err("只能预览文件对象。".to_string());
+        return Err(AppError::new(ErrorCode::ObjectsPreviewFailed));
     }
 
     let output = client
@@ -248,8 +253,15 @@ pub(crate) async fn fetch_object_preview(
         .key(key)
         .send()
         .await
-        .map_err(|error| format_storage_error(&error))?;
-    let too_large = || format!("文件超过 {} MiB，请下载后查看。", max_bytes / (1024 * 1024));
+        .map_err(|error| {
+            AppError::with_detail(
+                ErrorCode::StorageRequestFailed,
+                format_storage_error(&error),
+            )
+        })?;
+    let too_large = || {
+        AppError::new(ErrorCode::ObjectsPreviewTooLarge).param("limit", max_bytes / (1024 * 1024))
+    };
     if output.content_length().unwrap_or_default() > max_bytes as i64 {
         return Err(too_large());
     }
@@ -258,10 +270,9 @@ pub(crate) async fn fetch_object_preview(
     let mut bytes = Vec::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
-        let count = body
-            .read(&mut buffer)
-            .await
-            .map_err(|error| format!("读取文件预览失败：{error}"))?;
+        let count = body.read(&mut buffer).await.map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferLocalReadFailed, error.to_string())
+        })?;
         if count == 0 {
             break;
         }
@@ -277,7 +288,7 @@ pub(crate) async fn delete_objects(
     client: &Client,
     bucket: &str,
     keys: Vec<String>,
-) -> Result<DeleteObjectsResult, String> {
+) -> Result<DeleteObjectsResult, AppError> {
     if keys.is_empty() {
         return Ok(DeleteObjectsResult {
             deleted_count: 0,
@@ -288,7 +299,7 @@ pub(crate) async fn delete_objects(
     let mut object_keys = HashSet::new();
     for key in keys {
         if key.is_empty() {
-            return Err("不能删除空的对象 Key。".to_string());
+            return Err(AppError::new(ErrorCode::ObjectsInvalidKey));
         }
 
         if key.ends_with('/') {
@@ -302,10 +313,12 @@ pub(crate) async fn delete_objects(
                 if let Some(token) = continuation_token.as_deref() {
                     request = request.continuation_token(token);
                 }
-                let page = request
-                    .send()
-                    .await
-                    .map_err(|error| format_storage_error(&error))?;
+                let page = request.send().await.map_err(|error| {
+                    AppError::with_detail(
+                        ErrorCode::StorageRequestFailed,
+                        format_storage_error(&error),
+                    )
+                })?;
                 for object in page.contents() {
                     if let Some(object_key) = object.key() {
                         object_keys.insert(object_key.to_string());
@@ -333,20 +346,29 @@ pub(crate) async fn delete_objects(
                 ObjectIdentifier::builder()
                     .key(key)
                     .build()
-                    .map_err(|error| format!("无法构建删除请求：{error}"))
+                    .map_err(|error| {
+                        AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?;
         let delete = Delete::builder()
             .set_objects(Some(identifiers))
             .build()
-            .map_err(|error| format!("无法构建删除请求：{error}"))?;
+            .map_err(|error| {
+                AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+            })?;
         let output = client
             .delete_objects()
             .bucket(bucket)
             .delete(delete)
             .send()
             .await
-            .map_err(|error| format_storage_error(&error))?;
+            .map_err(|error| {
+                AppError::with_detail(
+                    ErrorCode::StorageRequestFailed,
+                    format_storage_error(&error),
+                )
+            })?;
         result.deleted_count += output.deleted().len();
         result.failed_keys.extend(
             output
@@ -364,13 +386,13 @@ pub(crate) async fn create_folder(
     bucket: &str,
     prefix: String,
     name: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let name = name.trim();
     if name.is_empty() {
-        return Err("请输入文件夹名称。".to_string());
+        return Err(AppError::new(ErrorCode::ObjectsInvalidFolderName));
     }
     if name == "." || name == ".." || name.contains('/') || name.contains('\\') {
-        return Err("文件夹名称不能包含路径分隔符或使用 .、..。".to_string());
+        return Err(AppError::new(ErrorCode::ObjectsInvalidFolderName));
     }
 
     let prefix = prefix.trim_matches('/');
@@ -387,7 +409,12 @@ pub(crate) async fn create_folder(
         .body(aws_sdk_s3::primitives::ByteStream::from_static(b""))
         .send()
         .await
-        .map_err(|error| format_storage_error(&error))?;
+        .map_err(|error| {
+            AppError::with_detail(
+                ErrorCode::StorageRequestFailed,
+                format_storage_error(&error),
+            )
+        })?;
 
     Ok(())
 }

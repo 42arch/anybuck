@@ -20,6 +20,7 @@ export interface TransferTask {
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'skipped'
   phase: 'copying' | 'downloading' | 'uploading' | 'verifying' | 'deleting' | null
   error: string | null
+  errorCode?: string | null
   totalBytes: number | null
   transferredBytes: number
   createdAt: number

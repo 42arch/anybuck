@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invokeCommand } from '@/api/invoke'
 
 export interface PublicAccessProbe {
   accessible: boolean
@@ -6,5 +6,5 @@ export interface PublicAccessProbe {
 }
 
 export function probePublicObjectUrl(url: string) {
-  return invoke<PublicAccessProbe>('probe_public_object_url', { url })
+  return invokeCommand<PublicAccessProbe>('probe_public_object_url', { url })
 }

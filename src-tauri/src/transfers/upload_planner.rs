@@ -1,3 +1,4 @@
+use crate::error::{AppError, ErrorCode};
 use std::{
     collections::HashSet,
     fs,
@@ -22,33 +23,42 @@ pub(crate) struct UploadItem {
     pub(crate) size: Option<u64>,
 }
 
-fn file_name(path: &Path) -> Result<String, String> {
+fn file_name(path: &Path) -> Result<String, AppError> {
     path.file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
         .map(str::to_string)
-        .ok_or_else(|| format!("无法读取本地路径名称：{}", path.display()))
+        .ok_or_else(|| {
+            AppError::new(ErrorCode::TransferInvalidSource).param("path", path.display())
+        })
 }
 
-fn relative_key(root: &Path, path: &Path, root_key: &str) -> Result<String, String> {
+fn relative_key(root: &Path, path: &Path, root_key: &str) -> Result<String, AppError> {
     let relative = path
         .strip_prefix(root)
-        .map_err(|_| "文件不在所选文件夹中。".to_string())?;
+        .map_err(|_| AppError::new(ErrorCode::TransferInvalidSource))?;
     let mut components = vec![root_key.to_string()];
     for component in relative.components() {
         match component {
             Component::Normal(name) => components.push(
                 name.to_str()
-                    .ok_or_else(|| format!("文件名不是 UTF-8：{}", path.display()))?
+                    .ok_or_else(|| {
+                        AppError::new(ErrorCode::TransferInvalidSource)
+                            .param("path", path.display())
+                    })?
                     .to_string(),
             ),
-            _ => return Err(format!("不安全的文件路径：{}", path.display())),
+            _ => {
+                return Err(
+                    AppError::new(ErrorCode::TransferUnsafePath).param("path", path.display())
+                );
+            }
         }
     }
     Ok(components.join("/"))
 }
 
-pub(crate) fn plan_uploads(paths: Vec<String>, prefix: &str) -> Result<Vec<UploadRoot>, String> {
+pub(crate) fn plan_uploads(paths: Vec<String>, prefix: &str) -> Result<Vec<UploadRoot>, AppError> {
     let prefix = prefix.trim_matches('/');
     let mut roots = Vec::new();
     let mut seen_paths = HashSet::new();
@@ -59,10 +69,14 @@ pub(crate) fn plan_uploads(paths: Vec<String>, prefix: &str) -> Result<Vec<Uploa
             continue;
         }
         let path = PathBuf::from(&local_path);
-        let metadata = fs::symlink_metadata(&path)
-            .map_err(|error| format!("无法读取所选项目 {}：{error}", path.display()))?;
+        let metadata = fs::symlink_metadata(&path).map_err(|error| {
+            AppError::with_detail(ErrorCode::TransferLocalReadFailed, error.to_string())
+                .param("path", path.display())
+        })?;
         if metadata.file_type().is_symlink() {
-            return Err(format!("文件夹上传不支持符号链接：{}", path.display()));
+            return Err(
+                AppError::new(ErrorCode::TransferUnsupportedItem).param("path", path.display())
+            );
         }
         let name = file_name(&path)?;
         let root_key = if prefix.is_empty() {
@@ -88,27 +102,30 @@ pub(crate) fn plan_uploads(paths: Vec<String>, prefix: &str) -> Result<Vec<Uploa
             let mut items = Vec::new();
             let mut pending = vec![path.clone()];
             while let Some(directory) = pending.pop() {
-                let entries = fs::read_dir(&directory)
-                    .map_err(|error| format!("无法读取文件夹 {}：{error}", directory.display()))?;
+                let entries = fs::read_dir(&directory).map_err(|error| {
+                    AppError::with_detail(ErrorCode::TransferLocalReadFailed, error.to_string())
+                        .param("path", directory.display())
+                })?;
                 let mut has_entries = false;
                 for entry in entries {
                     let entry = entry.map_err(|error| {
-                        format!("无法枚举文件夹 {}：{error}", directory.display())
+                        AppError::with_detail(ErrorCode::TransferLocalReadFailed, error.to_string())
+                            .param("path", directory.display())
                     })?;
                     has_entries = true;
                     scanned_entries += 1;
                     if scanned_entries > MAX_SCAN_ENTRIES {
-                        return Err(format!("单次最多扫描 {MAX_SCAN_ENTRIES} 个本地项目。"));
+                        return Err(AppError::new(ErrorCode::TransferLimitExceeded)
+                            .param("limit", MAX_SCAN_ENTRIES));
                     }
                     let entry_path = entry.path();
                     let entry_type = entry.file_type().map_err(|error| {
-                        format!("无法读取项目 {}：{error}", entry_path.display())
+                        AppError::with_detail(ErrorCode::TransferLocalReadFailed, error.to_string())
+                            .param("path", entry_path.display())
                     })?;
                     if entry_type.is_symlink() {
-                        return Err(format!(
-                            "文件夹上传不支持符号链接：{}",
-                            entry_path.display()
-                        ));
+                        return Err(AppError::new(ErrorCode::TransferUnsupportedItem)
+                            .param("path", entry_path.display()));
                     }
                     if entry_type.is_dir() {
                         pending.push(entry_path);
@@ -117,13 +134,20 @@ pub(crate) fn plan_uploads(paths: Vec<String>, prefix: &str) -> Result<Vec<Uploa
                         let size = entry
                             .metadata()
                             .map_err(|error| {
-                                format!("无法读取文件 {}：{error}", entry_path.display())
+                                AppError::with_detail(
+                                    ErrorCode::TransferLocalReadFailed,
+                                    error.to_string(),
+                                )
+                                .param("path", entry_path.display())
                             })?
                             .len();
                         items.push(UploadItem {
                             local_path: entry_path
                                 .to_str()
-                                .ok_or_else(|| format!("路径不是 UTF-8：{}", entry_path.display()))?
+                                .ok_or_else(|| {
+                                    AppError::new(ErrorCode::TransferInvalidSource)
+                                        .param("path", entry_path.display())
+                                })?
                                 .to_string(),
                             key: relative_key(&path, &entry_path, &root_key)?,
                             name: entry_name,
@@ -131,12 +155,12 @@ pub(crate) fn plan_uploads(paths: Vec<String>, prefix: &str) -> Result<Vec<Uploa
                         });
                         item_count += 1;
                     } else {
-                        return Err(format!("不支持上传的本地项目：{}", entry_path.display()));
+                        return Err(AppError::new(ErrorCode::TransferUnsupportedItem)
+                            .param("path", entry_path.display()));
                     }
                     if item_count > MAX_UPLOAD_ITEMS {
-                        return Err(format!(
-                            "单次最多上传 {MAX_UPLOAD_ITEMS} 个文件或空文件夹。"
-                        ));
+                        return Err(AppError::new(ErrorCode::TransferLimitExceeded)
+                            .param("limit", MAX_UPLOAD_ITEMS));
                     }
                 }
                 if !has_entries {
@@ -144,7 +168,10 @@ pub(crate) fn plan_uploads(paths: Vec<String>, prefix: &str) -> Result<Vec<Uploa
                     items.push(UploadItem {
                         local_path: directory
                             .to_str()
-                            .ok_or_else(|| format!("路径不是 UTF-8：{}", directory.display()))?
+                            .ok_or_else(|| {
+                                AppError::new(ErrorCode::TransferInvalidSource)
+                                    .param("path", directory.display())
+                            })?
                             .to_string(),
                         key,
                         name: file_name(&directory)?,
@@ -161,12 +188,14 @@ pub(crate) fn plan_uploads(paths: Vec<String>, prefix: &str) -> Result<Vec<Uploa
                 items,
             });
         } else {
-            return Err(format!("不支持上传的本地项目：{}", path.display()));
+            return Err(
+                AppError::new(ErrorCode::TransferUnsupportedItem).param("path", path.display())
+            );
         }
         if item_count > MAX_UPLOAD_ITEMS {
-            return Err(format!(
-                "单次最多上传 {MAX_UPLOAD_ITEMS} 个文件或空文件夹。"
-            ));
+            return Err(
+                AppError::new(ErrorCode::TransferLimitExceeded).param("limit", MAX_UPLOAD_ITEMS)
+            );
         }
     }
     Ok(roots)

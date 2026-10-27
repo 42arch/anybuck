@@ -6,17 +6,22 @@ import {
   TrashIcon,
 } from '@phosphor-icons/react'
 import { useState } from 'react'
+import { errorMessage } from '@/api/invoke'
 import { clearTransferHistory } from '@/api/transfers'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import i18n from '@/i18n'
+import { cn } from '@/lib/utils'
 import { ActiveTaskCard } from './active-task-card'
 import { HistoryTaskCard } from './history-task-card'
 import { terminalStatuses } from './utils'
 
 export { ActiveTaskCard } from './active-task-card'
 export { HistoryTaskCard } from './history-task-card'
+
+const sidebarActiveToggleClass = 'data-[state=on]:bg-sidebar-accent data-[state=on]:text-sidebar-accent-foreground data-[state=on]:hover:bg-sidebar-accent data-[state=on]:hover:text-sidebar-accent-foreground'
 
 interface TransfersViewProps {
   tasks: TransferTask[]
@@ -33,7 +38,7 @@ export function TransfersView({ tasks, onNotice }: TransfersViewProps) {
         onNotice(success)
     }
     catch (cause) {
-      onNotice(cause instanceof Error ? cause.message : String(cause))
+      onNotice(errorMessage(cause))
     }
   }
 
@@ -47,18 +52,18 @@ export function TransfersView({ tasks, onNotice }: TransfersViewProps) {
     const activeRoots = roots.filter(task => !terminalStatuses.has(task.status))
     const historyRoots = roots.filter(task => terminalStatuses.has(task.status))
     const historyTasks = tabTasks.filter(task => terminalStatuses.has(task.status))
-    const taskTitle = operation === 'upload' ? '上传任务' : operation === 'download' ? '下载任务' : '复制和移动任务'
+    const taskTitle = operation === 'upload' ? i18n.t('transfers.uploadTasks') : operation === 'download' ? i18n.t('transfers.downloadTasks') : i18n.t('transfers.copyMoveTasks')
     const TaskIcon = operation === 'upload' ? CloudArrowUpIcon : operation === 'download' ? CloudArrowDownIcon : CopyIcon
 
     return (
       <div key={operation} className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto">
         <section className="flex flex-col gap-2">
           <div className="flex items-center justify-between px-1">
-            <h2 className="text-sm font-medium">正在执行</h2>
+            <h2 className="text-sm font-medium">{i18n.t('transfers.running')}</h2>
             <span className="text-xs text-muted-foreground">
               {activeRoots.length}
               {' '}
-              项
+              {i18n.t('transfers.activeTaskUnit')}
             </span>
           </div>
           <div className="overflow-hidden rounded-lg border">
@@ -75,10 +80,11 @@ export function TransfersView({ tasks, onNotice }: TransfersViewProps) {
                   <Empty className="border-0 py-8">
                     <EmptyHeader>
                       <EmptyMedia variant="icon"><TaskIcon /></EmptyMedia>
-                      <EmptyTitle>没有进行中的任务</EmptyTitle>
+                      <EmptyTitle>{i18n.t('transfers.noActiveTasks')}</EmptyTitle>
                       <EmptyDescription>
                         {taskTitle}
-                        会显示在这里。
+                        {' '}
+                        {i18n.t('transfers.emptyDescriptionSuffix')}
                       </EmptyDescription>
                     </EmptyHeader>
                   </Empty>
@@ -88,13 +94,13 @@ export function TransfersView({ tasks, onNotice }: TransfersViewProps) {
         <section className="flex flex-col gap-2">
           <div className="flex items-center justify-between px-1">
             <div>
-              <h2 className="text-sm font-medium">历史记录</h2>
-              <p className="text-xs text-muted-foreground">保留最近结束的任务</p>
+              <h2 className="text-sm font-medium">{i18n.t('transfers.history')}</h2>
+              <p className="text-xs text-muted-foreground">{i18n.t('transfers.recentlyCompletedTasksKept')}</p>
             </div>
             {historyTasks.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={() => void runAction(clearTransferHistory, '历史记录已清理。')}>
+              <Button variant="ghost" size="sm" onClick={() => void runAction(clearTransferHistory, i18n.t('transfers.historyCleared'))}>
                 <TrashIcon data-icon="inline-start" />
-                清理历史
+                {i18n.t('transfers.clearHistory')}
               </Button>
             )}
           </div>
@@ -110,7 +116,7 @@ export function TransfersView({ tasks, onNotice }: TransfersViewProps) {
                       onNotice={onNotice}
                     />
                   ))
-              : <p className="px-4 py-8 text-center text-sm text-muted-foreground">暂无历史任务</p>}
+              : <p className="px-4 py-8 text-center text-sm text-muted-foreground">{i18n.t('transfers.noTaskHistory')}</p>}
           </div>
         </section>
       </div>
@@ -129,19 +135,19 @@ export function TransfersView({ tasks, onNotice }: TransfersViewProps) {
             if (value.length > 0)
               setTab(value[0] as 'upload' | 'download' | 'operations')
           }}
-          aria-label="任务切换"
+          aria-label={i18n.t('transfers.taskSwitcher')}
         >
-          <ToggleGroupItem value="upload" aria-label="上传" className="gap-1.5 px-3">
+          <ToggleGroupItem value="upload" aria-label={i18n.t('common.upload')} className={cn('gap-1.5 px-3', sidebarActiveToggleClass)}>
             <CloudArrowUpIcon />
-            <span>上传</span>
+            <span>{i18n.t('common.upload')}</span>
           </ToggleGroupItem>
-          <ToggleGroupItem value="download" aria-label="下载" className="gap-1.5 px-3">
+          <ToggleGroupItem value="download" aria-label={i18n.t('common.download')} className={cn('gap-1.5 px-3', sidebarActiveToggleClass)}>
             <CloudArrowDownIcon />
-            <span>下载</span>
+            <span>{i18n.t('common.download')}</span>
           </ToggleGroupItem>
-          <ToggleGroupItem value="operations" aria-label="复制与移动" className="gap-1.5 px-3">
+          <ToggleGroupItem value="operations" aria-label={i18n.t('transfers.copyMove')} className={cn('gap-1.5 px-3', sidebarActiveToggleClass)}>
             <CopyIcon />
-            <span>复制与移动</span>
+            <span>{i18n.t('transfers.copyMove')}</span>
           </ToggleGroupItem>
         </ToggleGroup>
         {renderTransferTab(tab)}

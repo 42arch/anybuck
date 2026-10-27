@@ -2,6 +2,7 @@ use crate::connection::model::{
     ConnectStorageRequest, SavedStorageConnection, StorageConnectionResult, StorageProvider,
 };
 use crate::connection::{aws, cos, gcs, kodo, oss, r2, tos};
+use crate::error::{AppError, ErrorCode};
 use crate::storage::s3::objects::{StorageObjectPage, fetch_page};
 use aws_sdk_s3::Client;
 use std::collections::HashMap;
@@ -18,7 +19,7 @@ pub(crate) struct PreparedConnection {
 
 pub(crate) async fn prepare_connection(
     request: &ConnectStorageRequest,
-) -> Result<PreparedConnection, String> {
+) -> Result<PreparedConnection, AppError> {
     match request.provider {
         StorageProvider::CloudflareR2 => r2::prepare_connection(request).await,
         StorageProvider::AwsS3 => aws::prepare_connection(request).await,
@@ -80,37 +81,37 @@ pub(crate) fn connections_share_bucket(
     source_id: &str,
     target_id: &str,
     state: &StorageConnectionState,
-) -> Result<bool, String> {
+) -> Result<bool, AppError> {
     let connections = state
         .connections
         .lock()
-        .map_err(|_| "存储连接状态不可用，请重启应用后重试。".to_string())?;
+        .map_err(|_| AppError::new(ErrorCode::ConnectionStateUnavailable))?;
     let source = connections
         .get(source_id)
-        .ok_or_else(|| "源存储会话已失效，请重新连接。".to_string())?;
+        .ok_or_else(|| AppError::new(ErrorCode::ConnectionSessionUnavailable))?;
     let target = connections
         .get(target_id)
-        .ok_or_else(|| "目标存储会话已失效，请重新连接。".to_string())?;
+        .ok_or_else(|| AppError::new(ErrorCode::ConnectionSessionUnavailable))?;
     Ok(source.identity == target.identity)
 }
 
 pub(crate) fn client_for_connection(
     connection_id: &str,
     state: &StorageConnectionState,
-) -> Result<(Client, String), String> {
+) -> Result<(Client, String), AppError> {
     let connections = state
         .connections
         .lock()
-        .map_err(|_| "存储连接状态不可用，请重启应用后重试。".to_string())?;
+        .map_err(|_| AppError::new(ErrorCode::ConnectionStateUnavailable))?;
     let connection = connections
         .get(connection_id)
-        .ok_or_else(|| "存储会话已失效，请重新连接。".to_string())?;
+        .ok_or_else(|| AppError::new(ErrorCode::ConnectionSessionUnavailable))?;
     Ok((connection.client.clone(), connection.bucket.clone()))
 }
 pub(crate) async fn connect_runtime(
     request: ConnectStorageRequest,
     state: &StorageConnectionState,
-) -> Result<StorageConnectionResult, String> {
+) -> Result<StorageConnectionResult, AppError> {
     let prepared = prepare_connection(&request).await?;
     let page = fetch_page(&prepared.client, &prepared.profile.bucket, "", None).await?;
     register_connection(state, prepared, page)
@@ -120,12 +121,12 @@ pub(crate) fn register_connection(
     state: &StorageConnectionState,
     prepared: PreparedConnection,
     page: StorageObjectPage,
-) -> Result<StorageConnectionResult, String> {
+) -> Result<StorageConnectionResult, AppError> {
     let connection_id = prepared.profile.id.clone();
     let mut connections = state
         .connections
         .lock()
-        .map_err(|_| "存储连接状态不可用，请重启应用后重试。".to_string())?;
+        .map_err(|_| AppError::new(ErrorCode::ConnectionStateUnavailable))?;
     connections.insert(
         connection_id.clone(),
         ConnectedStorage {

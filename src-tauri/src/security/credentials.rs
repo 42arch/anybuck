@@ -1,4 +1,5 @@
 use crate::connection::model::{SavedStorageCredentials, StorageProvider};
+use crate::error::{AppError, ErrorCode};
 use keyring::Entry;
 
 const R2_KEYRING_SERVICE: &str = "com.cloudstore.r2";
@@ -12,18 +13,18 @@ const TOS_KEYRING_SERVICE: &str = "com.cloudstore.tos";
 pub(crate) fn read_saved_credentials(
     provider: StorageProvider,
     connection_id: &str,
-) -> Result<SavedStorageCredentials, String> {
+) -> Result<SavedStorageCredentials, AppError> {
     let credentials = credential_entry(provider, connection_id)?
         .get_password()
         .map_err(keyring_error)?;
     serde_json::from_str(&credentials)
-        .map_err(|_| "系统凭证库中的存储凭证格式无效，请重新连接。".to_string())
+        .map_err(|_| AppError::new(ErrorCode::ConnectionCredentialsUnavailable))
 }
 
 pub(crate) fn credential_entry(
     provider: StorageProvider,
     connection_id: &str,
-) -> Result<Entry, String> {
+) -> Result<Entry, AppError> {
     Entry::new(keyring_service(provider), connection_id).map_err(keyring_error)
 }
 
@@ -48,8 +49,11 @@ pub(crate) fn restore_previous_secret(entry: &Entry, previous_secret: Option<&st
         }
     }
 }
-pub(crate) fn keyring_error(error: keyring::Error) -> String {
-    format!("系统凭证库不可用或无法访问：{error}")
+pub(crate) fn keyring_error(error: keyring::Error) -> AppError {
+    AppError::with_detail(
+        ErrorCode::ConnectionCredentialsUnavailable,
+        error.to_string(),
+    )
 }
 
 #[cfg(test)]

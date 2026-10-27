@@ -1,15 +1,20 @@
 import type { TransferTask } from '@/types/transfer'
+import i18n from '@/i18n'
 
 export const terminalStatuses = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'skipped'])
 
-export const statusLabels: Record<TransferTask['status'], string> = {
-  queued: '排队中',
-  running: '传输中',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-  interrupted: '已中断',
-  skipped: '已跳过',
+const statusKeys: Record<TransferTask['status'], string> = {
+  queued: 'transferStatus.queued',
+  running: 'transferStatus.transferring',
+  completed: 'transferStatus.completed',
+  failed: 'common.failed',
+  cancelled: 'transferStatus.cancelled',
+  interrupted: 'transferStatus.interrupted',
+  skipped: 'transferStatus.skipped',
+}
+
+export function statusLabel(status: TransferTask['status']): string {
+  return i18n.t(statusKeys[status])
 }
 
 export function taskPercent(task: TransferTask): number | null {
@@ -22,12 +27,12 @@ export function taskPercent(task: TransferTask): number | null {
 
 export function formatTaskTarget(task: TransferTask): string {
   if (task.operation === 'upload' || task.operation === 'upload-marker' || task.operation === 'upload-folder')
-    return `上传到 ${task.bucket}/${task.objectKey}`
+    return i18n.t('dynamic.uploadTo', { path: `${task.bucket}/${task.objectKey}` })
   if (task.operation === 'download')
-    return `保存到 ${task.localPath}`
+    return i18n.t('dynamic.saveTo', { path: task.localPath })
   if (task.operation === 'copy' || task.operation === 'move')
-    return `${task.destinationConnectionId && task.destinationConnectionId !== task.connectionId ? '跨连接 · ' : ''}${task.bucket}/${task.objectKey} → ${task.destinationBucket || task.bucket}/${task.destinationKey}`
+    return `${task.destinationConnectionId && task.destinationConnectionId !== task.connectionId ? i18n.t('transferStatus.crossConnection') : ''}${task.bucket}/${task.objectKey} → ${task.destinationBucket || task.bucket}/${task.destinationKey}`
   if (task.operation === 'copy-folder' || task.operation === 'move-folder')
-    return `${task.destinationConnectionId && task.destinationConnectionId !== task.connectionId ? '跨连接 · ' : ''}${task.bucket}/${task.objectKey} → ${task.destinationBucket || task.bucket}/${task.destinationKey}`
-  return `下载 ${task.bucket}/${task.objectKey}`
+    return `${task.destinationConnectionId && task.destinationConnectionId !== task.connectionId ? i18n.t('transferStatus.crossConnection') : ''}${task.bucket}/${task.objectKey} → ${task.destinationBucket || task.bucket}/${task.destinationKey}`
+  return i18n.t('dynamic.downloadFrom', { path: `${task.bucket}/${task.objectKey}` })
 }

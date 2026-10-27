@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use crate::storage::s3::{
     copy, migrate,
     transfer::{ProgressCallback, UploadOutcome, download_file, upload_file, upload_folder_marker},
@@ -102,7 +103,7 @@ pub(crate) fn spawn_task(
                     )
                     .await?;
                 }
-                Ok::<bool, String>(true)
+                Ok::<bool, AppError>(true)
             };
             operation.await.map(|success| (success, None))
         } else if matches!(worker_task.operation.as_str(), "upload" | "upload-marker") {

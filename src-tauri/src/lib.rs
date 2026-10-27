@@ -2,6 +2,7 @@ use tauri::Manager;
 
 mod commands;
 mod connection;
+mod error;
 mod persistence;
 mod security;
 mod storage;
@@ -55,5 +56,5 @@ pub fn run() {
             commands::transfers::clear_transfer_history
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("tauri.run.failed");
 }

@@ -1,17 +1,20 @@
 use crate::connection::manager::{PreparedConnection, new_connection_id};
 use crate::connection::model::{ConnectStorageRequest, SavedStorageConnection, StorageProvider};
+use crate::error::{AppError, ErrorCode};
 use aws_sdk_s3::{Client, config::Credentials};
 
 pub(crate) async fn prepare_connection(
     request: &ConnectStorageRequest,
-) -> Result<PreparedConnection, String> {
+) -> Result<PreparedConnection, AppError> {
     let region = request.region.trim();
     let bucket = request.bucket.trim();
     let access_key_id = request.access_key_id.trim();
     let secret_access_key = request.secret_access_key.trim();
     let endpoint = aws_endpoint(region, bucket, request.endpoint.as_deref())?;
     if access_key_id.is_empty() || secret_access_key.is_empty() {
-        return Err("请填写 AWS Access Key ID 和 Secret Access Key。".to_string());
+        return Err(
+            AppError::new(ErrorCode::ConnectionInvalidCredentials).param("provider", "AWS S3")
+        );
     }
 
     let session_token = request.session_token.trim();
@@ -50,7 +53,7 @@ pub(crate) async fn prepare_connection(
     })
 }
 
-fn aws_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<String, String> {
+fn aws_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<String, AppError> {
     if region.is_empty()
         || !region
             .bytes()
@@ -58,7 +61,7 @@ fn aws_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<S
         || region.starts_with('-')
         || region.ends_with('-')
     {
-        return Err("请填写有效的 AWS Region，例如 us-east-1。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidRegion).param("provider", "AWS S3"));
     }
     let valid_bucket = (3..=63).contains(&bucket.len())
         && bucket.bytes().all(|byte| {
@@ -76,7 +79,7 @@ fn aws_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<S
         && !bucket.contains(".-")
         && !bucket.contains("-.");
     if !valid_bucket {
-        return Err("AWS S3 Bucket 名称应为 3–63 位小写字母、数字、句点或连字符。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidBucket).param("provider", "AWS S3"));
     }
     let domain = if region.starts_with("cn-") {
         "amazonaws.com.cn"
@@ -86,7 +89,7 @@ fn aws_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<S
     let endpoint = format!("https://s3.{region}.{domain}");
     let requested = requested.unwrap_or_default().trim().trim_end_matches('/');
     if !requested.is_empty() && requested != endpoint {
-        return Err("AWS S3 Endpoint 必须与所选地域一致。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidEndpoint).param("provider", "AWS S3"));
     }
     Ok(endpoint)
 }

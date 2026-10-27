@@ -1,6 +1,7 @@
 import type { SavedStorageConnection, StorageProvider } from '@/types/connection'
 import { CloudIcon, InfoIcon, PencilSimpleIcon, TrashIcon } from '@phosphor-icons/react'
 import { useState } from 'react'
+import { errorMessage } from '@/api/invoke'
 import { ConnectionDialog } from '@/components/connection/connection-dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useStorageConnection } from '@/hooks/use-storage-connection'
+import i18n from '@/i18n'
 import { showNotice } from '@/lib/notice'
 import { normalizePublicBaseUrl } from '@/lib/object-url'
 import { useSettingsStore } from '@/store/settings-store'
@@ -19,30 +21,34 @@ interface ConnectionsSettingsProps {
   onNotice?: (message: string) => void
 }
 
-const providerLabels: Record<StorageProvider, string> = {
-  'cloudflare-r2': 'Cloudflare R2',
-  'aws-s3': 'AWS S3',
-  'tencent-cos': '腾讯云 COS',
-  'aliyun-oss': '阿里云 OSS',
-  'google-cloud-storage': 'Google Cloud Storage',
-  'qiniu-kodo': '七牛云 Kodo',
-  'volcengine-tos': '火山引擎 TOS',
+const providerLabelKeys: Record<StorageProvider, string> = {
+  'cloudflare-r2': 'providers.cloudflareR2',
+  'aws-s3': 'providers.awsS3',
+  'tencent-cos': 'providers.tencentCloudCos',
+  'aliyun-oss': 'providers.alibabaCloudOss',
+  'google-cloud-storage': 'providers.googleCloudStorage',
+  'qiniu-kodo': 'providers.qiniuKodo',
+  'volcengine-tos': 'providers.volcengineTos',
+}
+
+function providerLabel(provider: StorageProvider): string {
+  return i18n.t(providerLabelKeys[provider])
 }
 
 function publicDomainPlaceholder(provider: StorageProvider): string {
   if (provider === 'cloudflare-r2')
-    return 'https://pub-xxx.r2.dev 或自定义域名'
+    return i18n.t('connectionsSettings.r2PublicDomainPlaceholder')
   if (provider === 'qiniu-kodo')
-    return '填写已绑定到七牛空间的 HTTPS 域名'
-  return `留空使用 ${providerLabels[provider]} 默认对象地址`
+    return i18n.t('connectionsSettings.qiniuPublicDomainPlaceholder')
+  return i18n.t('dynamic.providerDefaultAddress', { provider: providerLabel(provider) })
 }
 
 function publicDomainDescription(provider: StorageProvider): string {
   if (provider === 'cloudflare-r2')
-    return '填写已启用的 r2.dev 或自定义域名；文件详情会验证匿名访问。'
+    return i18n.t('connectionsSettings.r2PublicDomainHint')
   if (provider === 'qiniu-kodo')
-    return '七牛 S3 Endpoint 不支持匿名访问；请填写已绑定到该空间的公开访问域名。'
-  return `可填写自定义域名；留空时检查 ${providerLabels[provider]} 默认对象地址是否可匿名访问。`
+    return i18n.t('connectionsSettings.qiniuPublicDomainHint')
+  return i18n.t('dynamic.providerCustomDomain', { provider: providerLabel(provider) })
 }
 
 export function ConnectionsSettings({ onNotice = showNotice }: ConnectionsSettingsProps) {
@@ -70,7 +76,7 @@ export function ConnectionsSettings({ onNotice = showNotice }: ConnectionsSettin
       onNotice(successMessage)
     }
     catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorMessage(cause))
     }
     finally {
       setBusyConnectionId(null)
@@ -81,35 +87,34 @@ export function ConnectionsSettings({ onNotice = showNotice }: ConnectionsSettin
     const draft = (publicUrlDrafts[connectionId] ?? publicBaseUrls[connectionId] ?? '').trim()
     const normalized = draft ? normalizePublicBaseUrl(draft) : ''
     if (normalized === null) {
-      setError('公开域名必须是完整的 HTTPS 域名，不包含路径、查询参数或账号密码。')
+      setError(i18n.t('connectionsSettings.invalidPublicDomain'))
       return
     }
     setPublicBaseUrl(connectionId, normalized)
     setPublicUrlDrafts(current => ({ ...current, [connectionId]: normalized }))
     setError('')
-    onNotice(normalized ? '公开访问域名已保存。' : '公开访问域名已清除。')
+    onNotice(normalized ? i18n.t('connectionsSettings.publicDomainSaved') : i18n.t('connectionsSettings.publicDomainCleared'))
   }
 
   return (
-    <section id="settings-connections" className="flex scroll-mt-4 flex-col gap-2">
+    <section className="flex flex-col gap-2">
       <div className="flex flex-col gap-1 pb-3">
-        <h2 className="text-base font-semibold">连接管理</h2>
-        <p className="text-xs text-muted-foreground">查看并管理已连接或已保存的云存储连接状态与公开域名。</p>
+        <h2 className="text-base font-semibold">{i18n.t('settings.connections')}</h2>
       </div>
 
       {connectionListError && (
         <Alert variant="destructive">
-          <AlertTitle>无法读取已保存的连接</AlertTitle>
+          <AlertTitle>{i18n.t('connections.loadSavedFailed')}</AlertTitle>
           <AlertDescription>
             {connectionListError}
             {' '}
-            请检查系统凭证库，或重新添加连接。
+            {i18n.t('connectionsSettings.checkSystemCredentialVaultAdd')}
           </AlertDescription>
         </Alert>
       )}
       {error && (
         <Alert variant="destructive">
-          <AlertTitle>连接操作失败</AlertTitle>
+          <AlertTitle>{i18n.t('connectionsSettings.connectionOperationFailed')}</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
@@ -117,15 +122,15 @@ export function ConnectionsSettings({ onNotice = showNotice }: ConnectionsSettin
       {isRestoring && connections.length === 0 && (
         <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
           <Spinner />
-          正在读取连接…
+          {i18n.t('connectionsSettings.loadingConnections')}
         </div>
       )}
       {!isRestoring && connections.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-12 text-center">
           <CloudIcon className="size-8 text-muted-foreground" />
           <div>
-            <p className="text-sm font-medium">还没有存储连接</p>
-            <p className="mt-1 text-xs text-muted-foreground">添加存储连接后，会在这里显示连接详情和状态。</p>
+            <p className="text-sm font-medium">{i18n.t('connectionsSettings.noStorageConnectionsYet')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{i18n.t('connectionsSettings.addedStorageConnectionsAppearDetails')}</p>
           </div>
         </div>
       )}
@@ -144,10 +149,10 @@ export function ConnectionsSettings({ onNotice = showNotice }: ConnectionsSettin
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="truncate text-sm font-semibold">{item.name}</span>
                       <Badge variant={item.connected ? 'secondary' : 'outline'}>
-                        {item.connected ? (isCurrent ? '当前连接' : '已连接') : '已断开'}
+                        {item.connected ? (isCurrent ? i18n.t('connectionsSettings.currentConnection') : i18n.t('nav.connected')) : i18n.t('nav.disconnected')}
                       </Badge>
-                      <Badge variant="outline">{isSaved ? '已保存' : '仅本次运行'}</Badge>
-                      <Badge variant="outline">{providerLabels[item.provider]}</Badge>
+                      {!isSaved && <Badge variant="outline">{i18n.t('connectionsSettings.sessionOnly')}</Badge>}
+                      <Badge variant="outline">{providerLabel(item.provider)}</Badge>
                     </div>
                     {isSaved && (
                       <div className="flex shrink-0 gap-1">
@@ -158,7 +163,7 @@ export function ConnectionsSettings({ onNotice = showNotice }: ConnectionsSettin
                           onClick={() => setEditingProfile(savedConnections.find(profile => profile.id === item.connectionId) ?? null)}
                         >
                           <PencilSimpleIcon data-icon="inline-start" />
-                          编辑
+                          {i18n.t('common.edit')}
                         </Button>
                         <Button
                           variant="ghost"
@@ -168,26 +173,26 @@ export function ConnectionsSettings({ onNotice = showNotice }: ConnectionsSettin
                           onClick={() => void runConnectionAction(item.connectionId, async () => {
                             await forgetSavedConnection(item.connectionId)
                             setPublicBaseUrl(item.connectionId, '')
-                          }, `已删除连接“${item.name}”及其本机凭证。`)}
+                          }, i18n.t('dynamic.connectionDeleted', { name: item.name }))}
                         >
                           {isBusy ? <Spinner data-icon="inline-start" /> : <TrashIcon data-icon="inline-start" />}
-                          删除
+                          {i18n.t('common.delete')}
                         </Button>
                       </div>
                     )}
                   </div>
-                  <div className="grid min-w-0 gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
-                    <p className="truncate">
-                      Bucket：
+                  <div className="grid min-w-0 gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
+                    <p className="break-all">
+                      {i18n.t('connectionsSettings.bucketLabel')}
                       {item.bucket}
                     </p>
-                    <p className="truncate">
-                      Endpoint：
-                      {item.endpoint}
-                    </p>
-                    <p className="break-all font-mono sm:col-span-2">
-                      连接 ID：
+                    <p className="break-all font-mono">
+                      {i18n.t('connectionsSettings.connectionId')}
                       {item.connectionId}
+                    </p>
+                    <p className="break-all sm:col-span-2">
+                      {i18n.t('connectionsSettings.endpointLabel')}
+                      {item.endpoint}
                     </p>
                   </div>
                   <form
@@ -198,12 +203,12 @@ export function ConnectionsSettings({ onNotice = showNotice }: ConnectionsSettin
                     }}
                   >
                     <div className="flex items-center gap-1.5">
-                      <label htmlFor={`public-domain-${item.connectionId}`} className="text-xs font-medium">公开访问域名</label>
+                      <label htmlFor={`public-domain-${item.connectionId}`} className="text-xs font-medium">{i18n.t('connectionsSettings.publicAccessDomain')}</label>
                       <Tooltip>
                         <TooltipTrigger
                           type="button"
                           className="inline-flex items-center justify-center rounded-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                          aria-label="公开访问域名说明"
+                          aria-label={i18n.t('connectionsSettings.publicDomainInformation')}
                         >
                           <InfoIcon className="size-3.5" />
                         </TooltipTrigger>
@@ -221,7 +226,7 @@ export function ConnectionsSettings({ onNotice = showNotice }: ConnectionsSettin
                         onChange={event => setPublicUrlDrafts(current => ({ ...current, [item.connectionId]: event.target.value }))}
                         placeholder={publicDomainPlaceholder(item.provider)}
                       />
-                      <Button type="submit" variant="outline" className="shrink-0">保存</Button>
+                      <Button type="submit" variant="outline" className="shrink-0">{i18n.t('common.save')}</Button>
                     </div>
                   </form>
                   <ConnectionCompatibilityCheck key={`${item.connectionId}-${probeRevision}`} connectionId={item.connectionId} connected={item.connected} />
@@ -229,7 +234,7 @@ export function ConnectionsSettings({ onNotice = showNotice }: ConnectionsSettin
               </Card>
             )
           })}
-          <p className="text-xs text-muted-foreground">已保存连接可编辑配置和更新凭证；临时连接请重新添加。访问密钥保存在系统凭证库中，不会显示在连接列表里。</p>
+          <p className="text-xs text-muted-foreground">{i18n.t('connectionsSettings.savedCredentialsHint')}</p>
         </div>
       )}
       {editingProfile && (

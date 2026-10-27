@@ -1,16 +1,17 @@
 use crate::connection::manager::{PreparedConnection, new_connection_id};
 use crate::connection::model::{ConnectStorageRequest, SavedStorageConnection, StorageProvider};
+use crate::error::{AppError, ErrorCode};
 use aws_sdk_s3::{Client, config::Credentials};
 
 pub(crate) async fn prepare_connection(
     request: &ConnectStorageRequest,
-) -> Result<PreparedConnection, String> {
+) -> Result<PreparedConnection, AppError> {
     let region = request.region.trim();
     let bucket = request.bucket.trim();
     let access_key_id = request.access_key_id.trim();
     let secret_access_key = request.secret_access_key.trim();
     if access_key_id.is_empty() || secret_access_key.is_empty() {
-        return Err("请填写火山引擎 Access Key ID 和 Secret Access Key。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidCredentials).param("provider", "TOS"));
     }
     let endpoint = tos_endpoint(region, bucket, request.endpoint.as_deref())?;
     let credentials = Credentials::new(
@@ -55,7 +56,7 @@ pub(crate) async fn prepare_connection(
     })
 }
 
-fn tos_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<String, String> {
+fn tos_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<String, AppError> {
     if region.is_empty()
         || !region
             .bytes()
@@ -63,7 +64,7 @@ fn tos_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<S
         || region.starts_with('-')
         || region.ends_with('-')
     {
-        return Err("请填写有效的火山引擎 Region ID，例如 cn-beijing。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidRegion).param("provider", "TOS"));
     }
     let valid_bucket = (3..=63).contains(&bucket.len())
         && bucket
@@ -78,14 +79,12 @@ fn tos_endpoint(region: &str, bucket: &str, requested: Option<&str>) -> Result<S
             .last()
             .is_some_and(u8::is_ascii_alphanumeric);
     if !valid_bucket {
-        return Err(
-            "TOS Bucket 名称应为 3–63 位小写字母、数字或连字符，且首尾不能是连字符。".to_string(),
-        );
+        return Err(AppError::new(ErrorCode::ConnectionInvalidBucket).param("provider", "TOS"));
     }
     let endpoint = format!("https://tos-s3-{region}.volces.com");
     let requested = requested.unwrap_or_default().trim().trim_end_matches('/');
     if !requested.is_empty() && requested != endpoint {
-        return Err("TOS S3 Endpoint 必须与所选 Region ID 一致。".to_string());
+        return Err(AppError::new(ErrorCode::ConnectionInvalidEndpoint).param("provider", "TOS"));
     }
     Ok(endpoint)
 }

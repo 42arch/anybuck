@@ -1,16 +1,16 @@
 import type { Icon } from '@phosphor-icons/react'
-import { CloudIcon, DownloadSimpleIcon, GearIcon } from '@phosphor-icons/react'
+import { CloudIcon, GearIcon, SlidersHorizontalIcon } from '@phosphor-icons/react'
 
-export type SettingsOption = 'connections' | 'download-path' | 'app-update'
+export type SettingsOption = 'connections' | 'general' | 'app-update'
 
 export interface SettingsItem {
   id: SettingsOption
-  label: string
+  labelKey: 'settings.connections' | 'settings.general' | 'settings.appUpdate'
   icon: Icon
 }
 
 export const settingsItems: SettingsItem[] = [
-  { id: 'connections', label: '连接管理', icon: CloudIcon },
-  { id: 'download-path', label: '默认下载路径', icon: DownloadSimpleIcon },
-  { id: 'app-update', label: '应用更新', icon: GearIcon },
+  { id: 'general', labelKey: 'settings.general', icon: SlidersHorizontalIcon },
+  { id: 'connections', labelKey: 'settings.connections', icon: CloudIcon },
+  { id: 'app-update', labelKey: 'settings.appUpdate', icon: GearIcon },
 ]

@@ -1,3 +1,4 @@
+use crate::error::{AppError, ErrorCode};
 use aws_sdk_s3::{
     Client,
     operation::head_object::HeadObjectOutput,
@@ -15,7 +16,7 @@ pub(crate) struct PlannedObjectRoot {
     pub source_root: String,
     pub destination_root: String,
     pub objects: Vec<(String, String)>,
-    pub error: Option<String>,
+    pub error: Option<AppError>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -33,14 +34,14 @@ pub(crate) async fn plan_object_operations(
     same_storage: bool,
     keys: Vec<String>,
     destination_prefix: String,
-) -> Result<Vec<PlannedObjectRoot>, String> {
+) -> Result<Vec<PlannedObjectRoot>, AppError> {
     let destination_prefix = destination_prefix.trim_matches('/');
     if destination_prefix
         .split('/')
         .any(|part| part == "." || part == ".." || part.is_empty())
         && !destination_prefix.is_empty()
     {
-        return Err("目标目录路径无效。".to_string());
+        return Err(AppError::new(ErrorCode::TransferInvalidDestination));
     }
 
     let mut roots = Vec::new();
@@ -54,7 +55,7 @@ pub(crate) async fn plan_object_operations(
             error: None,
         };
         if source_root.is_empty() {
-            root.error = Some("对象 Key 不能为空。".to_string());
+            root.error = Some(AppError::new(ErrorCode::ObjectsInvalidKey));
             roots.push(root);
             continue;
         }
@@ -65,7 +66,7 @@ pub(crate) async fn plan_object_operations(
             .next()
             .unwrap_or("");
         if name.is_empty() {
-            root.error = Some("无法确定对象名称。".to_string());
+            root.error = Some(AppError::new(ErrorCode::ObjectsInvalidKey));
             roots.push(root);
             continue;
         }
@@ -82,12 +83,12 @@ pub(crate) async fn plan_object_operations(
             && (source_root == destination_root
                 || (is_folder && destination_root.starts_with(&source_root)))
         {
-            root.error = Some("不能复制或移动到原位置或文件夹自身的子目录。".to_string());
+            root.error = Some(AppError::new(ErrorCode::TransferInvalidDestination));
             roots.push(root);
             continue;
         }
         if !destinations.insert(destination_root.clone()) {
-            root.error = Some("所选项目在目标目录中重名。".to_string());
+            root.error = Some(AppError::new(ErrorCode::TransferConflict));
             roots.push(root);
             continue;
         }
@@ -96,7 +97,7 @@ pub(crate) async fn plan_object_operations(
             match list_all_keys(source_client, source_bucket, &source_root).await {
                 Ok(keys) if !keys.is_empty() => keys,
                 Ok(_) => {
-                    root.error = Some("源文件夹不存在或为空。".to_string());
+                    root.error = Some(AppError::new(ErrorCode::TransferInvalidSource));
                     roots.push(root);
                     continue;
                 }
@@ -112,7 +113,7 @@ pub(crate) async fn plan_object_operations(
 
         match target_exists(target_client, target_bucket, &destination_root, is_folder).await {
             Ok(true) => {
-                root.error = Some("目标位置已有同名项目，请先处理冲突。".to_string());
+                root.error = Some(AppError::new(ErrorCode::TransferConflict));
                 roots.push(root);
                 continue;
             }
@@ -138,7 +139,11 @@ pub(crate) async fn plan_object_operations(
     Ok(roots)
 }
 
-async fn list_all_keys(client: &Client, bucket: &str, prefix: &str) -> Result<Vec<String>, String> {
+async fn list_all_keys(
+    client: &Client,
+    bucket: &str,
+    prefix: &str,
+) -> Result<Vec<String>, AppError> {
     let mut keys = Vec::new();
     let mut continuation_token = None;
     loop {
@@ -150,10 +155,9 @@ async fn list_all_keys(client: &Client, bucket: &str, prefix: &str) -> Result<Ve
         if let Some(token) = continuation_token.as_deref() {
             request = request.continuation_token(token);
         }
-        let page = request
-            .send()
-            .await
-            .map_err(|error| format!("无法列出源文件夹：{error}"))?;
+        let page = request.send().await.map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
         keys.extend(
             page.contents()
                 .iter()
@@ -172,7 +176,7 @@ pub(crate) async fn target_exists(
     bucket: &str,
     key: &str,
     is_folder: bool,
-) -> Result<bool, String> {
+) -> Result<bool, AppError> {
     let page = client
         .list_objects_v2()
         .bucket(bucket)
@@ -180,7 +184,9 @@ pub(crate) async fn target_exists(
         .max_keys(1)
         .send()
         .await
-        .map_err(|error| format!("无法检查目标位置：{error}"))?;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
     if is_folder {
         if !page.contents().is_empty() {
             return Ok(true);
@@ -198,11 +204,13 @@ pub(crate) async fn target_exists(
         .max_keys(1)
         .send()
         .await
-        .map_err(|error| format!("无法检查目标文件夹：{error}"))?;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
     Ok(!folder.contents().is_empty())
 }
 
-async fn object_exists(client: &Client, bucket: &str, key: &str) -> Result<bool, String> {
+async fn object_exists(client: &Client, bucket: &str, key: &str) -> Result<bool, AppError> {
     let page = client
         .list_objects_v2()
         .bucket(bucket)
@@ -210,7 +218,9 @@ async fn object_exists(client: &Client, bucket: &str, key: &str) -> Result<bool,
         .max_keys(1)
         .send()
         .await
-        .map_err(|error| format!("无法检查目标对象：{error}"))?;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
     Ok(page.contents().first().and_then(|object| object.key()) == Some(key))
 }
 
@@ -220,24 +230,26 @@ pub(crate) async fn copy_only(
     source: &str,
     target: &str,
     on_progress: Option<&(dyn Fn(u64, Option<u64>) + Send + Sync)>,
-) -> Result<CopyCheckpoint, String> {
+) -> Result<CopyCheckpoint, AppError> {
     let source_head = client
         .head_object()
         .bucket(bucket)
         .key(source)
         .send()
         .await
-        .map_err(|error| format!("无法读取源对象：{error}"))?;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
     let size = source_head
         .content_length()
-        .ok_or_else(|| "无法获取源对象大小。".to_string())?;
-    let size = u64::try_from(size).map_err(|_| "源对象大小无效。".to_string())?;
+        .ok_or_else(|| AppError::new(ErrorCode::StorageResponseInvalid))?;
+    let size = u64::try_from(size).map_err(|_| AppError::new(ErrorCode::StorageResponseInvalid))?;
     if let Some(progress) = on_progress {
         progress(0, Some(size));
     }
     let source_etag = source_head
         .e_tag()
-        .ok_or_else(|| "无法获取源对象 ETag，已取消操作以保护源对象。".to_string())?
+        .ok_or_else(|| AppError::new(ErrorCode::StorageResponseInvalid))?
         .to_string();
     let copy_source = format!(
         "{}/{}",
@@ -268,7 +280,9 @@ pub(crate) async fn copy_only(
             })
             .send()
             .await
-            .map_err(|error| format!("复制对象失败：{error}"))?;
+            .map_err(|error| {
+                AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+            })?;
         if let Some(progress) = on_progress {
             progress(size, Some(size));
         }
@@ -291,13 +305,13 @@ pub(crate) async fn copy_only(
         .key(source)
         .send()
         .await
-        .map_err(|error| format!("已复制到目标位置，但无法确认源对象是否变化：{error}"))?;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
     if current.content_length() != Some(size as i64)
         || current.e_tag() != Some(source_etag.as_str())
     {
-        return Err(
-            "已复制到目标位置，但源对象在操作期间发生变化，请检查两个位置的对象。".to_string(),
-        );
+        return Err(AppError::new(ErrorCode::TransferSourceChanged));
     }
     let target_head = client
         .head_object()
@@ -305,13 +319,15 @@ pub(crate) async fn copy_only(
         .key(target)
         .send()
         .await
-        .map_err(|error| format!("已复制到目标位置，但无法验证目标对象：{error}"))?;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
     if target_head.content_length() != Some(size as i64) {
-        return Err("已复制到目标位置，但目标对象大小与源对象不一致。".to_string());
+        return Err(AppError::new(ErrorCode::TransferVerificationFailed));
     }
     let target_etag = target_head
         .e_tag()
-        .ok_or_else(|| "已复制到目标位置，但无法读取目标对象 ETag。".to_string())?;
+        .ok_or_else(|| AppError::new(ErrorCode::StorageResponseInvalid))?;
     Ok(CopyCheckpoint {
         source_etag,
         target_etag: target_etag.to_string(),
@@ -327,18 +343,20 @@ pub(crate) async fn finish_move(
     source: &str,
     target: &str,
     checkpoint: &CopyCheckpoint,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let target_head = target_client
         .head_object()
         .bucket(target_bucket)
         .key(target)
         .send()
         .await
-        .map_err(|error| format!("无法确认目标对象是否变化，未删除源对象：{error}"))?;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
     if target_head.content_length() != Some(checkpoint.size as i64)
         || target_head.e_tag() != Some(checkpoint.target_etag.as_str())
     {
-        return Err("目标对象在复制后发生变化，未删除源对象。".to_string());
+        return Err(AppError::new(ErrorCode::TransferDestinationChanged));
     }
     let source_head = match source_client
         .head_object()
@@ -355,12 +373,17 @@ pub(crate) async fn finish_move(
         {
             return Ok(());
         }
-        Err(error) => return Err(format!("无法确认源对象是否变化，未删除源对象：{error}")),
+        Err(error) => {
+            return Err(AppError::with_detail(
+                ErrorCode::StorageRequestFailed,
+                error.to_string(),
+            ));
+        }
     };
     if source_head.content_length() != Some(checkpoint.size as i64)
         || source_head.e_tag() != Some(checkpoint.source_etag.as_str())
     {
-        return Err("源对象在复制后发生变化，未删除源对象。".to_string());
+        return Err(AppError::new(ErrorCode::TransferSourceChanged));
     }
     source_client
         .delete_object()
@@ -369,7 +392,9 @@ pub(crate) async fn finish_move(
         .if_match(&checkpoint.source_etag)
         .send()
         .await
-        .map_err(|error| format!("已复制到目标位置，但删除源对象失败：{error}"))?;
+        .map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
     Ok(())
 }
 
@@ -381,7 +406,7 @@ async fn copy_multipart(
     size: i64,
     source_head: &HeadObjectOutput,
     on_progress: Option<&(dyn Fn(u64, Option<u64>) + Send + Sync)>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let mut create = client.create_multipart_upload().bucket(bucket).key(target);
     if let Some(content_type) = source_head.content_type() {
         create = create.content_type(content_type);
@@ -399,8 +424,9 @@ async fn copy_multipart(
         create = create.content_language(value);
     }
     if let Some(value) = source_head.expires_string() {
-        let expires = DateTime::from_str(value, DateTimeFormat::HttpDate)
-            .map_err(|error| format!("无法读取源对象过期时间：{error}"))?;
+        let expires = DateTime::from_str(value, DateTimeFormat::HttpDate).map_err(|error| {
+            AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+        })?;
         create = create.expires(expires);
     }
     if let Some(metadata) = source_head.metadata() {
@@ -409,13 +435,12 @@ async fn copy_multipart(
     if let Some(storage_class) = source_head.storage_class() {
         create = create.storage_class(storage_class.clone());
     }
-    let started = create
-        .send()
-        .await
-        .map_err(|error| format!("无法开始大对象复制：{error}"))?;
+    let started = create.send().await.map_err(|error| {
+        AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+    })?;
     let upload_id = started
         .upload_id()
-        .ok_or_else(|| "未收到分片上传 ID。".to_string())?;
+        .ok_or_else(|| AppError::new(ErrorCode::TransferMultipartFailed))?;
     let mut cleanup = MultipartCopyCleanup {
         client: client.clone(),
         bucket: bucket.to_string(),
@@ -438,11 +463,16 @@ async fn copy_multipart(
                 .copy_source_range(format!("bytes={offset}-{end}"))
                 .send()
                 .await
-                .map_err(|error| format!("复制第 {part_number} 个分片失败：{error}"))?;
+                .map_err(|error| {
+                    AppError::with_detail(ErrorCode::TransferMultipartFailed, error.to_string())
+                        .param("part", part_number)
+                })?;
             let etag = copied
                 .copy_part_result()
                 .and_then(|part| part.e_tag())
-                .ok_or_else(|| format!("第 {part_number} 个分片缺少 ETag。"))?;
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::StorageResponseInvalid).param("part", part_number)
+                })?;
             parts.push(
                 CompletedPart::builder()
                     .part_number(part_number)
@@ -468,8 +498,10 @@ async fn copy_multipart(
             .if_none_match("*")
             .send()
             .await
-            .map_err(|error| format!("完成大对象复制失败：{error}"))?;
-        Ok::<(), String>(())
+            .map_err(|error| {
+                AppError::with_detail(ErrorCode::StorageRequestFailed, error.to_string())
+            })?;
+        Ok::<(), AppError>(())
     }
     .await;
     let cleaned = if operation.is_err() {

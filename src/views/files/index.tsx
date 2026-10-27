@@ -2,15 +2,19 @@ import type { StorageItem, StorageObject } from '@/types/storage'
 import { CloudArrowUpIcon } from '@phosphor-icons/react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { errorMessage } from '@/api/invoke'
 import { countObjects, listObjects } from '@/api/objects'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent } from '@/components/ui/card'
 import { useFilesDragDrop } from '@/hooks/use-files-drag-drop'
 import { useStorageConnection } from '@/hooks/use-storage-connection'
+import i18n from '@/i18n'
 import { showNotice } from '@/lib/notice'
 import { toStorageItems } from '@/lib/storage-items'
 import { useConnectionDialogStore } from '@/store/connection-dialog-store'
 import { useFileTransferStore } from '@/store/file-transfer-store'
+import { useSettingsStore } from '@/store/settings-store'
 import { CreateFolderDialog } from './create-folder-dialog'
 import { DeleteConfirmDialog } from './delete-confirm-dialog'
 import { FileDetails } from './file-details'
@@ -27,9 +31,12 @@ const objectsPageSize = 100
 const objectsQueryKey = (connectionId: string | undefined, prefix: string, search = '') => ['storage', 'objects', connectionId ?? null, prefix, search] as const
 
 export function FilesView() {
+  const { i18n: currentI18n } = useTranslation()
+  const locale = currentI18n.resolvedLanguage ?? 'zh-CN'
   const { connection, selectedConnection, selectionVersion, isRestoring } = useStorageConnection()
   const openConnectionDialog = useConnectionDialogStore(state => state.openDialog)
   const downloadItems = useFileTransferStore(state => state.downloadItems)
+  const defaultFileView = useSettingsStore(state => state.defaultFileView)
   const onNotice = showNotice
 
   const [path, setPath] = useState('')
@@ -37,7 +44,7 @@ export function FilesView() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedItemsById, setSelectedItemsById] = useState<Record<string, StorageItem>>({})
   const [focused, setFocused] = useState<string | null>(null)
-  const [grid, setGrid] = useState(false)
+  const [grid, setGrid] = useState(defaultFileView === 'grid')
   const [displayMode, setDisplayMode] = useState<'pagination' | 'infinite'>('pagination')
   const pageScope = JSON.stringify([connection?.connectionId ?? '', path, debouncedSearch])
   const [pageState, setPageState] = useState({ scope: pageScope, index: 0 })
@@ -89,7 +96,7 @@ export function FilesView() {
 
   const connectionId = connection?.connectionId
   const hasRemoteConnection = Boolean(connection)
-  const bucketName = connection?.bucket ?? selectedConnection?.bucket ?? '未选择存储桶'
+  const bucketName = connection?.bucket ?? selectedConnection?.bucket ?? i18n.t('files.noBucketSelected')
 
   const queryClient = useQueryClient()
   const objectsQuery = useInfiniteQuery({
@@ -109,11 +116,11 @@ export function FilesView() {
   const pageObjects = displayMode === 'infinite'
     ? objects
     : objectsQuery.data?.pages[pageIndex]?.objects ?? emptyObjects
-  const loadError = objectsQuery.error instanceof Error ? objectsQuery.error.message : ''
+  const loadError = objectsQuery.error ? errorMessage(objectsQuery.error) : ''
   const isSearchPending = search.trim() !== debouncedSearch
 
-  const directoryItems = useMemo(() => connection ? toStorageItems(objects) : [], [connection, objects])
-  const pageDirectoryItems = useMemo(() => connection ? toStorageItems(pageObjects) : [], [connection, pageObjects])
+  const directoryItems = useMemo(() => connection ? toStorageItems(objects, locale) : [], [connection, objects, locale])
+  const pageDirectoryItems = useMemo(() => connection ? toStorageItems(pageObjects, locale) : [], [connection, pageObjects, locale])
   const visibleItems = useMemo(() => {
     if (isSearchPending)
       return []
@@ -123,9 +130,9 @@ export function FilesView() {
           return -1
         if (a.kind !== 'folder' && b.kind === 'folder')
           return 1
-        return sortAscending ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+        return sortAscending ? a.name.localeCompare(b.name, locale) : b.name.localeCompare(a.name, locale)
       })
-  }, [pageDirectoryItems, isSearchPending, sortAscending])
+  }, [pageDirectoryItems, isSearchPending, sortAscending, locale])
 
   const focusedItem = directoryItems.find(item => item.id === focused)
   const selectedItems = Object.values(selectedItemsById)
@@ -140,7 +147,7 @@ export function FilesView() {
   const loadedCount = objects.length
   const totalCount = countQuery.data
   const isCounting = countQuery.isFetching || isSearchPending
-  const countError = countQuery.error instanceof Error ? countQuery.error.message : ''
+  const countError = countQuery.error ? errorMessage(countQuery.error) : ''
 
   function navigateTo(nextPath: string) {
     setPath(nextPath)
@@ -181,7 +188,7 @@ export function FilesView() {
   }
 
   function unavailableAction(label: string) {
-    onNotice(connection ? `${label}功能尚未接入。` : '请先添加并连接存储桶。')
+    onNotice(connection ? i18n.t('dynamic.featureUnavailable', { label }) : i18n.t('files.addConnectBucketFirst'))
   }
 
   function refreshDirectory() {
@@ -193,7 +200,7 @@ export function FilesView() {
       void queryClient.resetQueries({ queryKey: objectsQueryKey(connection.connectionId, path) })
       return
     }
-    onNotice('请先添加并连接存储桶。')
+    onNotice(i18n.t('files.addConnectBucketFirst'))
   }
 
   function changeSearch(value: string) {
@@ -258,7 +265,7 @@ export function FilesView() {
 
   function openDestination(operation: 'move' | 'copy', items: StorageItem[]) {
     if (!connectionId) {
-      unavailableAction(operation === 'move' ? '移动' : '复制')
+      unavailableAction(operation === 'move' ? i18n.t('common.move') : i18n.t('common.copy'))
       return
     }
     setDestinationAction({ operation, items })
@@ -271,7 +278,7 @@ export function FilesView() {
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/10" role="status">
             <div className="flex flex-col items-center gap-2 rounded-lg border bg-card px-6 py-5 text-center shadow-sm">
               <CloudArrowUpIcon className="size-8 text-primary" />
-              <span className="font-medium">松开以上传到当前目录</span>
+              <span className="font-medium">{i18n.t('files.dropUploadCurrentFolder')}</span>
               <span className="text-xs text-muted-foreground">{`${bucketName}/${path ? `${path}/` : ''}`}</span>
             </div>
           </div>
@@ -280,7 +287,7 @@ export function FilesView() {
           <CardContent className="flex min-h-0 flex-1 min-w-0 flex-col gap-0 overflow-visible px-0">
             {loadError && (
               <Alert variant="destructive" className="m-4 mb-0">
-                <AlertTitle>无法读取存储对象</AlertTitle>
+                <AlertTitle>{i18n.t('files.loadObjectsFailed')}</AlertTitle>
                 <AlertDescription>{loadError}</AlertDescription>
               </Alert>
             )}
@@ -294,7 +301,7 @@ export function FilesView() {
               onSearchChange={changeSearch}
               onCreateFolderClick={() => {
                 if (!hasRemoteConnection) {
-                  unavailableAction('新建文件夹')
+                  unavailableAction(i18n.t('filesToolbar.newFolder'))
                   return
                 }
                 setCreateFolderOpen(true)

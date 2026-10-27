@@ -4,6 +4,7 @@ import { FileIcon } from '@/components/files/file-icon'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import i18n from '@/i18n'
 import { FileActionsMenu } from './file-actions-menu'
 
 interface FilesGridProps {
@@ -44,10 +45,10 @@ export function FilesGrid({
             >
               <FileIcon kind={item.kind} size={28} />
               <span className="max-w-full truncate">{item.name}</span>
-              <span className="text-xs text-muted-foreground">{item.kind === 'folder' ? '文件夹' : item.size}</span>
+              <span className="text-xs text-muted-foreground">{item.kind === 'folder' ? i18n.t('common.folder') : item.size}</span>
             </Button>
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="absolute top-2 right-2" aria-label={`${item.name} 的更多操作`} />}>
+              <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="absolute top-2 right-2" aria-label={i18n.t('dynamic.moreFileActions', { name: item.name })} />}>
                 <DotsThreeIcon />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
