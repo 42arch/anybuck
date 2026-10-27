@@ -1,6 +1,20 @@
 # Changelog
 
 
+## v0.0.2-beta.2 (2026-10-28)
+
+
+### 🚀 Features
+
+#### English
+
+- Add internationalization, theme customization, and error handling improvements. ([1d7d6e6](https://github.com/42arch/cloudstore/commit/1d7d6e6))
+
+#### 简体中文
+
+- 适配国际化多语言，支持外观主题自定义，优化错误处理机制与操作反馈提示。
+
+
 ## v0.0.2-beta.1 (2026-10-27)
 
 
