@@ -1,8 +1,20 @@
 # Changelog
 
 
-## v0.0.2-beta.2 (2026-10-28)
+## v0.0.3
 
+### 🚀 Enhancements
+
+#### English
+
+- Add storage provider logos and macOS ad-hoc signing configuration ([8d7d8e2](https://github.com/42arch/cloudstore/commit/8d7d8e2))
+
+#### 简体中文
+
+- 添加存储服务商 Logo 并配置 macOS Ad-hoc 签名 ([8d7d8e2](https://github.com/42arch/cloudstore/commit/8d7d8e2))
+
+
+## v0.0.2-beta.2 (2026-10-28)
 
 ### 🚀 Features
 
@@ -16,7 +28,6 @@
 
 
 ## v0.0.2-beta.1 (2026-10-27)
-
 
 ### 🚀 Features
 
