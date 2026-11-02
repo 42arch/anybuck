@@ -13,6 +13,7 @@ import {
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RenameConnectionDialog } from '@/components/connection/rename-connection-dialog'
+import { ProviderLogo } from '@/components/providers/provider-logo'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import {
@@ -160,7 +161,7 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                 >
                   <AccordionTrigger className="h-8 cursor-pointer items-center gap-2 rounded-md font-normal text-sidebar-foreground hover:bg-sidebar-surface hover:no-underline">
                     <div className="flex min-w-0 items-center gap-2 truncate">
-                      <CloudIcon className="size-4 shrink-0" />
+                      <ProviderLogo provider={group.id} />
                       <span className="truncate">{group.label}</span>
                     </div>
                   </AccordionTrigger>

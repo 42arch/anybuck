@@ -50,7 +50,6 @@
     "toggleSidebar": "Toggle sidebar",
     "bucketConnected": "Bucket connected",
     "notConnected": "Not connected",
-    "notifications": "Notifications",
     "sidebarTitle": "Sidebar",
     "sidebarDescription": "Displays the mobile sidebar."
   },
@@ -227,12 +226,6 @@
     "loadSavedFailed": "Could not load saved connections",
     "name": "Connection name"
   },
-  "transferProgress": {
-    "uploadingFile": "Uploading file",
-    "downloadingFile": "Downloading file",
-    "copyingObject": "Copying object",
-    "movingObject": "Moving object"
-  },
   "transferPhase": {
     "readingSource": "Reading source object",
     "uploadingDestination": "Uploading destination object",
@@ -262,9 +255,7 @@
     "overwriteConflictingFiles": "Overwrite conflicting files"
   },
   "recent": {
-    "recentActivity": "Recent activity",
-    "recentActivityNotAvailableYet": "Recent activity is not available yet",
-    "futureVersionShowRecentlyOpened": "A future version will show recently opened objects here."
+    "recentActivityNotAvailableYet": "Recent activity is not available yet"
   },
   "textPreview": {
     "fileContainsNonTextContent": "The file contains non-text content.",
@@ -410,11 +401,7 @@
     "loadObjectsFailed": "Could not load object list",
     "noMatchingFiles": "No matching files",
     "bucketEmpty": "Bucket is empty",
-    "loadingCurrentFolder": "Loading the current folder.",
     "checkConnectionSettingsNetworkTry": "Check the connection settings or network and try again.",
-    "connectBucketBrowseObjects": "Connect a bucket to browse objects.",
-    "tryAnotherSearchTerm": "Try another search term",
-    "bucketFolderEmpty": "This bucket or folder is empty.",
     "addConnectBucket": "Add and connect a bucket"
   },
   "downloadSettings": {
@@ -506,14 +493,19 @@
     "running": "Running",
     "activeTaskUnit": " tasks",
     "noActiveTasks": "No active tasks",
-    "emptyDescriptionSuffix": "will appear here.",
     "history": "History",
-    "recentlyCompletedTasksKept": "Recently completed tasks are kept",
     "historyCleared": "History cleared.",
     "clearHistory": "Clear history",
     "noTaskHistory": "No task history",
     "taskSwitcher": "Task switcher",
-    "copyMove": "Copy and move"
+    "copyMove": "Copy and move",
+    "showDownloadLocation": "Show in folder"
+  },
+  "transferPreview": {
+    "open": "View transfer tasks",
+    "title": "Active transfers",
+    "empty": "No active transfers",
+    "viewAll": "View all tasks"
   },
   "transferStatus": {
     "queued": "Queued",

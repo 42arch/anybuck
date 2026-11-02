@@ -81,10 +81,7 @@ Download packages for your operating system from [GitHub Releases](https://githu
 | **Windows** | `.exe` (NSIS) / `.msi` | For 64-bit Windows 10 / 11 |
 | **Linux** | `.deb` / `.AppImage` | For Ubuntu/Debian and common Linux distributions |
 
-> **macOS Notice**: If macOS blocks execution with an "app is damaged" warning due to missing codesigning/notarization, run:
-> ```bash
-> xattr -cr /Applications/cloudstore.app
-> ```
+> **macOS Notice**: The installer uses ad-hoc signing and is not notarized by Apple. If macOS blocks the app on first launch, try opening it, then go to System Settings → Privacy & Security and choose “Open Anyway” in the security notice. Only do this when you trust the download source.
 
 ---
 

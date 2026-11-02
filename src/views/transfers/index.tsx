@@ -10,7 +10,7 @@ import { errorMessage } from '@/api/invoke'
 import { clearTransferHistory } from '@/api/transfers'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import i18n from '@/i18n'
 import { cn } from '@/lib/utils'
@@ -52,7 +52,6 @@ export function TransfersView({ tasks, onNotice }: TransfersViewProps) {
     const activeRoots = roots.filter(task => !terminalStatuses.has(task.status))
     const historyRoots = roots.filter(task => terminalStatuses.has(task.status))
     const historyTasks = tabTasks.filter(task => terminalStatuses.has(task.status))
-    const taskTitle = operation === 'upload' ? i18n.t('transfers.uploadTasks') : operation === 'download' ? i18n.t('transfers.downloadTasks') : i18n.t('transfers.copyMoveTasks')
     const TaskIcon = operation === 'upload' ? CloudArrowUpIcon : operation === 'download' ? CloudArrowDownIcon : CopyIcon
 
     return (
@@ -81,11 +80,6 @@ export function TransfersView({ tasks, onNotice }: TransfersViewProps) {
                     <EmptyHeader>
                       <EmptyMedia variant="icon"><TaskIcon /></EmptyMedia>
                       <EmptyTitle>{i18n.t('transfers.noActiveTasks')}</EmptyTitle>
-                      <EmptyDescription>
-                        {taskTitle}
-                        {' '}
-                        {i18n.t('transfers.emptyDescriptionSuffix')}
-                      </EmptyDescription>
                     </EmptyHeader>
                   </Empty>
                 )}
@@ -95,7 +89,6 @@ export function TransfersView({ tasks, onNotice }: TransfersViewProps) {
           <div className="flex items-center justify-between px-1">
             <div>
               <h2 className="text-sm font-medium">{i18n.t('transfers.history')}</h2>
-              <p className="text-xs text-muted-foreground">{i18n.t('transfers.recentlyCompletedTasksKept')}</p>
             </div>
             {historyTasks.length > 0 && (
               <Button variant="ghost" size="sm" onClick={() => void runAction(clearTransferHistory, i18n.t('transfers.historyCleared'))}>

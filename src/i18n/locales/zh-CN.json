@@ -50,7 +50,6 @@
     "toggleSidebar": "切换侧栏",
     "bucketConnected": "存储桶已连接",
     "notConnected": "未连接",
-    "notifications": "通知",
     "sidebarTitle": "侧边栏",
     "sidebarDescription": "显示移动端侧边栏。"
   },
@@ -215,12 +214,6 @@
     "loadSavedFailed": "无法读取已保存的连接",
     "name": "连接名称"
   },
-  "transferProgress": {
-    "uploadingFile": "正在上传文件",
-    "downloadingFile": "正在下载文件",
-    "copyingObject": "正在复制对象",
-    "movingObject": "正在移动对象"
-  },
   "transferPhase": {
     "readingSource": "正在读取源对象",
     "uploadingDestination": "正在上传目标对象",
@@ -250,9 +243,7 @@
     "overwriteConflictingFiles": "覆盖冲突文件"
   },
   "recent": {
-    "recentActivity": "最近访问记录",
-    "recentActivityNotAvailableYet": "最近访问记录尚未接入",
-    "futureVersionShowRecentlyOpened": "后续版本可在这里查看最近打开的对象。"
+    "recentActivityNotAvailableYet": "最近访问记录尚未接入"
   },
   "textPreview": {
     "fileContainsNonTextContent": "文件包含非文本内容。",
@@ -398,11 +389,7 @@
     "loadObjectsFailed": "对象列表读取失败",
     "noMatchingFiles": "没有找到匹配的文件",
     "bucketEmpty": "Bucket 暂无对象",
-    "loadingCurrentFolder": "正在读取当前目录。",
     "checkConnectionSettingsNetworkTry": "请检查连接配置或网络后重试。",
-    "connectBucketBrowseObjects": "连接存储桶后即可浏览对象。",
-    "tryAnotherSearchTerm": "试试其他搜索词",
-    "bucketFolderEmpty": "这个 Bucket 或目录当前没有对象。",
     "addConnectBucket": "添加并连接存储桶"
   },
   "downloadSettings": {
@@ -494,14 +481,19 @@
     "running": "正在执行",
     "activeTaskUnit": "项",
     "noActiveTasks": "没有进行中的任务",
-    "emptyDescriptionSuffix": "会显示在这里。",
     "history": "历史记录",
-    "recentlyCompletedTasksKept": "保留最近结束的任务",
     "historyCleared": "历史记录已清理。",
     "clearHistory": "清理历史",
     "noTaskHistory": "暂无历史任务",
     "taskSwitcher": "任务切换",
-    "copyMove": "复制与移动"
+    "copyMove": "复制与移动",
+    "showDownloadLocation": "在文件夹中显示"
+  },
+  "transferPreview": {
+    "open": "查看传输任务",
+    "title": "进行中的传输",
+    "empty": "暂无进行中的传输",
+    "viewAll": "查看全部任务"
   },
   "transferStatus": {
     "queued": "排队中",

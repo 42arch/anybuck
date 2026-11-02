@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { ProviderLogo } from '@/components/providers/provider-logo'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -147,7 +148,7 @@ export function ConnectionDialog(props?: ConnectionDialogProps) {
             <div className="flex flex-col gap-2">
               <Label>{i18n.t('connectionDialog.provider')}</Label>
               {editProfile
-                ? <Badge variant="outline">{providerLabel(provider)}</Badge>
+                ? <Badge variant="outline" className="gap-1.5"><ProviderLogo provider={provider} />{providerLabel(provider)}</Badge>
                 : (
                     <ToggleGroup
                       className="flex-wrap"
@@ -159,13 +160,13 @@ export function ConnectionDialog(props?: ConnectionDialogProps) {
                       }}
                       aria-label={i18n.t('connectionDialog.storageProvider')}
                     >
-                      <ToggleGroupItem value="cloudflare-r2">Cloudflare R2</ToggleGroupItem>
-                      <ToggleGroupItem value="aws-s3">AWS S3</ToggleGroupItem>
-                      <ToggleGroupItem value="tencent-cos">{i18n.t('providers.tencentCloudCos')}</ToggleGroupItem>
-                      <ToggleGroupItem value="aliyun-oss">{i18n.t('providers.alibabaCloudOss')}</ToggleGroupItem>
-                      <ToggleGroupItem value="google-cloud-storage">Google Cloud Storage</ToggleGroupItem>
-                      <ToggleGroupItem value="qiniu-kodo">{i18n.t('providers.qiniuKodo')}</ToggleGroupItem>
-                      <ToggleGroupItem value="volcengine-tos">{i18n.t('providers.volcengineTos')}</ToggleGroupItem>
+                      <ToggleGroupItem value="cloudflare-r2" className="gap-1.5 px-2"><ProviderLogo provider="cloudflare-r2" />Cloudflare R2</ToggleGroupItem>
+                      <ToggleGroupItem value="aws-s3" className="gap-1.5 px-2"><ProviderLogo provider="aws-s3" />AWS S3</ToggleGroupItem>
+                      <ToggleGroupItem value="tencent-cos" className="gap-1.5 px-2"><ProviderLogo provider="tencent-cos" />{i18n.t('providers.tencentCloudCos')}</ToggleGroupItem>
+                      <ToggleGroupItem value="aliyun-oss" className="gap-1.5 px-2"><ProviderLogo provider="aliyun-oss" />{i18n.t('providers.alibabaCloudOss')}</ToggleGroupItem>
+                      <ToggleGroupItem value="google-cloud-storage" className="gap-1.5 px-2"><ProviderLogo provider="google-cloud-storage" />Google Cloud Storage</ToggleGroupItem>
+                      <ToggleGroupItem value="qiniu-kodo" className="gap-1.5 px-2"><ProviderLogo provider="qiniu-kodo" />{i18n.t('providers.qiniuKodo')}</ToggleGroupItem>
+                      <ToggleGroupItem value="volcengine-tos" className="gap-1.5 px-2"><ProviderLogo provider="volcengine-tos" />{i18n.t('providers.volcengineTos')}</ToggleGroupItem>
                     </ToggleGroup>
                   )}
             </div>

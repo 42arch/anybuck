@@ -36,17 +36,9 @@ export function FilesEmpty({
                     ? i18n.t('filesEmpty.noMatchingFiles')
                     : i18n.t('filesEmpty.bucketEmpty')}
         </EmptyTitle>
-        <EmptyDescription>
-          {isLoading
-            ? i18n.t('filesEmpty.loadingCurrentFolder')
-            : loadError
-              ? i18n.t('filesEmpty.checkConnectionSettingsNetworkTry')
-              : !hasRemoteConnection
-                  ? i18n.t('filesEmpty.connectBucketBrowseObjects')
-                  : search
-                    ? i18n.t('filesEmpty.tryAnotherSearchTerm')
-                    : i18n.t('filesEmpty.bucketFolderEmpty')}
-        </EmptyDescription>
+        {loadError && (
+          <EmptyDescription>{i18n.t('filesEmpty.checkConnectionSettingsNetworkTry')}</EmptyDescription>
+        )}
       </EmptyHeader>
       {!hasRemoteConnection && !isLoading && (
         <Button onClick={onConnect}>{i18n.t('filesEmpty.addConnectBucket')}</Button>

@@ -6,7 +6,9 @@ import {
   CloudArrowUpIcon,
   CopyIcon,
   FolderIcon,
+  FolderOpenIcon,
 } from '@phosphor-icons/react'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { errorMessage, taskErrorMessage } from '@/api/invoke'
 import { retryTransferTask } from '@/api/transfers'
 import { Button } from '@/components/ui/button'
@@ -74,6 +76,11 @@ export function HistoryTaskCard({ task, childrenTasks = [], onNotice }: HistoryT
   const retryable = ['failed', 'cancelled', 'interrupted'].includes(task.status)
     && (!(isCopy || isMove) || task.phase !== null)
   const { sizeText, percentText } = getHistoryMetrics(task, childrenTasks)
+  const locationPath = task.operation === 'download' && ['completed', 'skipped'].includes(task.status)
+    ? task.localPath
+    : task.operation === 'folder'
+      ? childrenTasks.find(child => child.operation === 'download' && ['completed', 'skipped'].includes(child.status))?.localPath
+      : undefined
 
   async function handleAction(action: () => Promise<unknown>, success: string) {
     try {
@@ -83,6 +90,20 @@ export function HistoryTaskCard({ task, childrenTasks = [], onNotice }: HistoryT
     }
     catch (cause) {
       (onNotice ?? showNotice)(errorMessage(cause))
+    }
+  }
+
+  async function revealDownloadLocation() {
+    if (!locationPath)
+      return
+    try {
+      await revealItemInDir(locationPath)
+    }
+    catch (cause) {
+      if (onNotice)
+        onNotice(errorMessage(cause))
+      else
+        showNotice(errorMessage(cause), 'error')
     }
   }
 
@@ -108,6 +129,17 @@ export function HistoryTaskCard({ task, childrenTasks = [], onNotice }: HistoryT
           <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
             {sizeText && <span>{sizeText}</span>}
             {percentText && <span className="font-medium text-foreground tabular-nums">{percentText}</span>}
+            {locationPath && (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={i18n.t('transfers.showDownloadLocation')}
+                title={i18n.t('transfers.showDownloadLocation')}
+                onClick={() => void revealDownloadLocation()}
+              >
+                <FolderOpenIcon />
+              </Button>
+            )}
             {retryable && !isParent && (
               <Button
                 size="icon-sm"

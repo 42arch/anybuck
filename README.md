@@ -81,10 +81,7 @@ CloudStore 使用**本地优先（Local-First）**架构：
 | **Windows** | `.exe` (NSIS) / `.msi` | 适用于 64 位 Windows 10 / 11 |
 | **Linux** | `.deb` / `.AppImage` | 适用于 Ubuntu/Debian 及常见 Linux 桌面发行版 |
 
-> **macOS 说明**：若未进行签名公证，首次打开提示“已损坏”或“无法打开”时，可在终端执行：
-> ```bash
-> xattr -cr /Applications/cloudstore.app
-> ```
+> **macOS 说明**：安装包使用 ad-hoc 签名，未经过 Apple 公证。首次打开时如果被 macOS 拦截，请先尝试打开应用，再前往“系统设置 → 隐私与安全性”，在安全性提示处选择“仍要打开”。此操作仅适用于你确认下载来源可信的情况。
 
 ---
 

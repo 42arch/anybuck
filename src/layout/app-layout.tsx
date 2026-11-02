@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { ConnectionDialog } from '@/components/connection/connection-dialog'
 import { TransferConfirmationDialogs } from '@/components/transfers/transfer-confirmation-dialogs'
-import { TransferProgressToast } from '@/components/transfers/transfer-progress-toast'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { useAppUpdateQuery } from '@/hooks/use-app-update-query'
 import { useConnectionActions } from '@/hooks/use-connection-actions'
@@ -69,7 +68,12 @@ export function AppLayout() {
         onAddConnection={(provider?: StorageProvider) => openConnectionDialog(provider)}
       />
       <SidebarInset className="h-svh min-h-0 min-w-0 overflow-hidden bg-background">
-        <AppHeader title={t(viewTitleKeys[view])} connected={Boolean(connection)} />
+        <AppHeader
+          title={t(viewTitleKeys[view])}
+          connected={Boolean(connection)}
+          tasks={transferTasks}
+          onViewTransfers={() => navigateToView('transfers')}
+        />
         <div className="mx-auto flex min-h-0 w-full max-w-screen-2xl flex-1 flex-col gap-4 overflow-y-auto p-2 md:p-3">
           <div className="flex min-h-0 flex-1 flex-col">
             <Routes>
@@ -85,7 +89,6 @@ export function AppLayout() {
       </SidebarInset>
       <ConnectionDialog />
       <TransferConfirmationDialogs />
-      <TransferProgressToast tasks={transferTasks} />
     </SidebarProvider>
   )
 }
