@@ -213,7 +213,8 @@ mod tests {
     #[test]
     fn plans_nested_files_and_empty_directories_without_following_links() {
         let root = std::env::temp_dir().join(format!(
-            "cloudstore-upload-plan-{}-{}",
+            "{}-upload-plan-{}-{}",
+            crate::constants::APP_NAME,
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

@@ -18,6 +18,13 @@ interface SettingsState {
   setDefaultFileView: (view: DefaultFileView) => void
 }
 
+if (typeof window !== 'undefined' && !localStorage.getItem('anybuck-settings')) {
+  const legacySettings = localStorage.getItem('cloudstore-settings')
+  if (legacySettings) {
+    localStorage.setItem('anybuck-settings', legacySettings)
+  }
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     set => ({
@@ -40,7 +47,7 @@ export const useSettingsStore = create<SettingsState>()(
       }),
     }),
     {
-      name: 'cloudstore-settings',
+      name: 'anybuck-settings',
       storage: createJSONStorage(() => localStorage),
       partialize: state => ({ defaultDownloadPath: state.defaultDownloadPath, publicBaseUrls: state.publicBaseUrls, language: state.language, theme: state.theme, defaultFileView: state.defaultFileView }),
     },

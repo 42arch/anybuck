@@ -29,7 +29,7 @@ export function AppUpdateSettings() {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-col gap-1 pb-1">
-        <h2 className="text-base font-semibold">{i18n.t('settings.appUpdate')}</h2>
+        <h2 className="text-sm font-medium">{i18n.t('settings.appUpdate')}</h2>
         <p className="text-xs text-muted-foreground">{i18n.t('dynamic.updateVersion', { version: versionQuery.data ?? (isTauri() ? i18n.t('appUpdate.loading') : i18n.t('appUpdate.developmentMode')) })}</p>
       </div>
 

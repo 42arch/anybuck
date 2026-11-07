@@ -11,10 +11,10 @@ export function LanguageSettings() {
   return (
     <section className="flex flex-col gap-3">
       <div className="pb-1">
-        <h2 className="text-base font-semibold">{t('settings.language')}</h2>
+        <h2 className="text-sm font-medium">{t('settings.language')}</h2>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <label htmlFor="settings-language-select" className="text-sm sm:w-32 sm:shrink-0">{t('settings.languageLabel')}</label>
+        <label htmlFor="settings-language-select" className="text-xs sm:w-32 sm:shrink-0">{t('settings.languageLabel')}</label>
         <Select value={language} onValueChange={value => setLanguage(value as LanguagePreference)}>
           <SelectTrigger id="settings-language-select" className="min-w-44">
             <SelectValue>{t(language === 'system' ? 'settings.followSystem' : language === 'zh-CN' ? 'settings.chinese' : 'settings.english')}</SelectValue>

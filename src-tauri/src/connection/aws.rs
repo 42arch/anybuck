@@ -27,7 +27,7 @@ pub(crate) async fn prepare_connection(
             Some(session_token.to_string())
         },
         None,
-        "cloudstore-aws-s3",
+        crate::constants::provider_client_label("aws-s3"),
     );
     // Let the AWS SDK resolve the regional S3 endpoint, including AWS partitions.
     let shared_config = aws_config::defaults(aws_config::BehaviorVersion::latest())

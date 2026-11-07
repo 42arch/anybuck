@@ -1,6 +1,9 @@
 use crate::connection::model::{SavedStorageConnection, SavedStorageCredentials};
+use crate::constants::LEGACY_APP_IDENTIFIER;
 use crate::error::{AppError, ErrorCode};
-use crate::security::credentials::{credential_entry, keyring_error, restore_previous_secret};
+use crate::security::credentials::{
+    credential_entry, keyring_error, legacy_credential_entry, restore_previous_secret,
+};
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager};
 
@@ -12,8 +15,11 @@ pub(crate) fn load_saved_connections(
     app: &AppHandle,
 ) -> Result<Vec<SavedStorageConnection>, AppError> {
     let path = profile_path(app)?;
+    let legacy_app_path = legacy_app_profile_path(app)?;
     let file_path = if path.exists() {
         path
+    } else if legacy_app_path.exists() {
+        legacy_app_path
     } else {
         legacy_profile_path(app)?
     };
@@ -148,6 +154,9 @@ pub(crate) fn remove_saved_connection(
         restore_previous_profile(&path, previous_profile.as_deref());
         return Err(keyring_error(error));
     }
+    if let Ok(legacy_entry) = legacy_credential_entry(provider, connection_id) {
+        let _ = legacy_entry.delete_credential();
+    }
     Ok(())
 }
 
@@ -158,6 +167,17 @@ fn profile_path(app: &AppHandle) -> Result<PathBuf, AppError> {
         .map_err(|error| {
             AppError::with_detail(ErrorCode::ConnectionDataUnavailable, error.to_string())
         })
+}
+
+fn legacy_app_profile_path(app: &AppHandle) -> Result<PathBuf, AppError> {
+    let current_dir = app.path().app_data_dir().map_err(|error| {
+        AppError::with_detail(ErrorCode::ConnectionDataUnavailable, error.to_string())
+    })?;
+    let legacy_dir = current_dir
+        .parent()
+        .map(|p| p.join(LEGACY_APP_IDENTIFIER))
+        .unwrap_or_else(|| current_dir.clone());
+    Ok(legacy_dir.join(PROFILE_FILE))
 }
 
 fn legacy_profile_path(app: &AppHandle) -> Result<PathBuf, AppError> {

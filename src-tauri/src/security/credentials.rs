@@ -1,22 +1,19 @@
 use crate::connection::model::{SavedStorageCredentials, StorageProvider};
+use crate::constants::{KEYRING_SERVICE_PREFIX, LEGACY_KEYRING_SERVICE_PREFIX};
 use crate::error::{AppError, ErrorCode};
 use keyring::Entry;
-
-const R2_KEYRING_SERVICE: &str = "com.cloudstore.r2";
-const AWS_KEYRING_SERVICE: &str = "com.cloudstore.aws-s3";
-const COS_KEYRING_SERVICE: &str = "com.cloudstore.cos";
-const OSS_KEYRING_SERVICE: &str = "com.cloudstore.oss";
-const GCS_KEYRING_SERVICE: &str = "com.cloudstore.gcs";
-const KODO_KEYRING_SERVICE: &str = "com.cloudstore.kodo";
-const TOS_KEYRING_SERVICE: &str = "com.cloudstore.tos";
 
 pub(crate) fn read_saved_credentials(
     provider: StorageProvider,
     connection_id: &str,
 ) -> Result<SavedStorageCredentials, AppError> {
-    let credentials = credential_entry(provider, connection_id)?
-        .get_password()
-        .map_err(keyring_error)?;
+    let credentials = match credential_entry(provider, connection_id)?.get_password() {
+        Ok(c) => Ok(c),
+        Err(keyring::Error::NoEntry) => legacy_credential_entry(provider, connection_id)?
+            .get_password()
+            .map_err(keyring_error),
+        Err(err) => Err(keyring_error(err)),
+    }?;
     serde_json::from_str(&credentials)
         .map_err(|_| AppError::new(ErrorCode::ConnectionCredentialsUnavailable))
 }
@@ -25,19 +22,37 @@ pub(crate) fn credential_entry(
     provider: StorageProvider,
     connection_id: &str,
 ) -> Result<Entry, AppError> {
-    Entry::new(keyring_service(provider), connection_id).map_err(keyring_error)
+    Entry::new(&keyring_service(provider), connection_id).map_err(keyring_error)
 }
 
-fn keyring_service(provider: StorageProvider) -> &'static str {
+pub(crate) fn legacy_credential_entry(
+    provider: StorageProvider,
+    connection_id: &str,
+) -> Result<Entry, AppError> {
+    Entry::new(&legacy_keyring_service(provider), connection_id).map_err(keyring_error)
+}
+
+fn provider_slug(provider: StorageProvider) -> &'static str {
     match provider {
-        StorageProvider::CloudflareR2 => R2_KEYRING_SERVICE,
-        StorageProvider::AwsS3 => AWS_KEYRING_SERVICE,
-        StorageProvider::TencentCos => COS_KEYRING_SERVICE,
-        StorageProvider::AliyunOss => OSS_KEYRING_SERVICE,
-        StorageProvider::GoogleCloudStorage => GCS_KEYRING_SERVICE,
-        StorageProvider::QiniuKodo => KODO_KEYRING_SERVICE,
-        StorageProvider::VolcengineTos => TOS_KEYRING_SERVICE,
+        StorageProvider::CloudflareR2 => "r2",
+        StorageProvider::AwsS3 => "aws-s3",
+        StorageProvider::TencentCos => "cos",
+        StorageProvider::AliyunOss => "oss",
+        StorageProvider::GoogleCloudStorage => "gcs",
+        StorageProvider::QiniuKodo => "kodo",
+        StorageProvider::VolcengineTos => "tos",
     }
+}
+
+pub(crate) fn keyring_service(provider: StorageProvider) -> String {
+    format!("{KEYRING_SERVICE_PREFIX}.{}", provider_slug(provider))
+}
+
+pub(crate) fn legacy_keyring_service(provider: StorageProvider) -> String {
+    format!(
+        "{LEGACY_KEYRING_SERVICE_PREFIX}.{}",
+        provider_slug(provider)
+    )
 }
 pub(crate) fn restore_previous_secret(entry: &Entry, previous_secret: Option<&str>) {
     match previous_secret {
@@ -58,38 +73,50 @@ pub(crate) fn keyring_error(error: keyring::Error) -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        AWS_KEYRING_SERVICE, COS_KEYRING_SERVICE, GCS_KEYRING_SERVICE, KODO_KEYRING_SERVICE,
-        OSS_KEYRING_SERVICE, R2_KEYRING_SERVICE, TOS_KEYRING_SERVICE, keyring_service,
-    };
+    use super::{keyring_service, legacy_keyring_service};
     use crate::connection::model::StorageProvider;
 
     #[test]
     fn provider_credentials_use_separate_services() {
         assert_eq!(
             keyring_service(StorageProvider::CloudflareR2),
-            R2_KEYRING_SERVICE
+            "com.anybuck.r2"
         );
-        assert_eq!(keyring_service(StorageProvider::AwsS3), AWS_KEYRING_SERVICE);
+        assert_eq!(
+            keyring_service(StorageProvider::AwsS3),
+            "com.anybuck.aws-s3"
+        );
         assert_eq!(
             keyring_service(StorageProvider::TencentCos),
-            COS_KEYRING_SERVICE
+            "com.anybuck.cos"
         );
         assert_eq!(
             keyring_service(StorageProvider::AliyunOss),
-            OSS_KEYRING_SERVICE
+            "com.anybuck.oss"
         );
         assert_eq!(
             keyring_service(StorageProvider::GoogleCloudStorage),
-            GCS_KEYRING_SERVICE
+            "com.anybuck.gcs"
         );
         assert_eq!(
             keyring_service(StorageProvider::QiniuKodo),
-            KODO_KEYRING_SERVICE
+            "com.anybuck.kodo"
         );
         assert_eq!(
             keyring_service(StorageProvider::VolcengineTos),
-            TOS_KEYRING_SERVICE
+            "com.anybuck.tos"
+        );
+    }
+
+    #[test]
+    fn legacy_keyring_services_preserve_cloudstore_namespace() {
+        assert_eq!(
+            legacy_keyring_service(StorageProvider::CloudflareR2),
+            "com.cloudstore.r2"
+        );
+        assert_eq!(
+            legacy_keyring_service(StorageProvider::AwsS3),
+            "com.cloudstore.aws-s3"
         );
     }
 }

@@ -42,7 +42,7 @@ export function DownloadPathSettings({ onNotice = showNotice }: DownloadPathSett
   return (
     <section className="flex flex-col gap-2">
       <div className="flex flex-col gap-1 pb-3">
-        <h2 className="text-base font-semibold">{i18n.t('settings.downloadPath')}</h2>
+        <h2 className="text-sm font-medium">{i18n.t('settings.downloadPath')}</h2>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <Input

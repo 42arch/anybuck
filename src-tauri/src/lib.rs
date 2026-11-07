@@ -2,6 +2,7 @@ use tauri::Manager;
 
 mod commands;
 mod connection;
+pub(crate) mod constants;
 mod error;
 mod persistence;
 mod security;

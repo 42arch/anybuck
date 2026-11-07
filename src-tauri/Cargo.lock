@@ -53,6 +53,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "anybuck"
+version = "0.0.3"
+dependencies = [
+ "aws-config",
+ "aws-sdk-s3",
+ "bytes",
+ "http-body",
+ "keyring",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-updater",
+ "tokio",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -993,27 +1014,6 @@ checksum = "e8cf2a2c93cd704877c0858356ed03480ff301ee950b43f1cbe4573b088bfa6c"
 dependencies = [
  "crypto-common 0.2.2",
  "inout",
-]
-
-[[package]]
-name = "cloudstore"
-version = "0.0.3"
-dependencies = [
- "aws-config",
- "aws-sdk-s3",
- "bytes",
- "http-body",
- "keyring",
- "reqwest",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-updater",
- "tokio",
 ]
 
 [[package]]

@@ -24,4 +24,4 @@ macOS 本机验证更新签名包时，可在仓库根目录运行：
 TAURI_SIGNING_PRIVATE_KEY="$PWD/.local-secrets/updater.key" bun tauri build --debug --bundles app --ci
 ```
 
-Tauri 构建器需要私钥的绝对路径，或将密钥完整内容放入该环境变量。生成的 `.app.tar.gz.sig` 应与更新包一起检查。可用 `codesign --verify --deep --strict --verbose=2 src-tauri/target/debug/bundle/macos/cloudstore.app` 验证应用代码签名，并用 `codesign -dv --verbose=4 src-tauri/target/debug/bundle/macos/cloudstore.app` 查看 `Signature=adhoc`。正式发布前还应在另一台 Mac 上测试下载后的首次打开流程。
+Tauri 构建器需要私钥的绝对路径，或将密钥完整内容放入该环境变量。生成的 `.app.tar.gz.sig` 应与更新包一起检查。可用 `codesign --verify --deep --strict --verbose=2 src-tauri/target/debug/bundle/macos/AnyBuck.app` 验证应用代码签名，并用 `codesign -dv --verbose=4 src-tauri/target/debug/bundle/macos/AnyBuck.app` 查看 `Signature=adhoc`。正式发布前还应在另一台 Mac 上测试下载后的首次打开流程。

@@ -28,7 +28,7 @@ pub(crate) async fn prepare_connection(
         secret_access_key,
         None,
         None,
-        "cloudstore-gcs",
+        crate::constants::provider_client_label("gcs"),
     );
     // GCS accepts S3 V4 HMAC requests at its XML API endpoint. Path style also
     // works for bucket names containing dots, which cannot use a TLS subdomain.

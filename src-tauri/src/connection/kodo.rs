@@ -21,7 +21,7 @@ pub(crate) async fn prepare_connection(
         secret_access_key,
         None,
         None,
-        "cloudstore-kodo",
+        crate::constants::provider_client_label("kodo"),
     );
     let shared_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
         .endpoint_url(&endpoint)

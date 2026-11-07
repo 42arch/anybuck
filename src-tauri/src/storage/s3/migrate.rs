@@ -48,7 +48,10 @@ pub(crate) async fn copy_across_connections(
         .e_tag()
         .ok_or_else(|| AppError::new(ErrorCode::StorageResponseInvalid))?
         .to_string();
-    let temp_path = std::env::temp_dir().join(format!("cloudstore-migration-{task_id}.part"));
+    let temp_path = std::env::temp_dir().join(format!(
+        "{}-migration-{task_id}.part",
+        crate::constants::APP_NAME
+    ));
 
     on_phase("downloading");
     on_progress(0, Some(size));

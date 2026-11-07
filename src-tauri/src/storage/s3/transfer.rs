@@ -448,7 +448,8 @@ pub(crate) async fn download_file(
     let total = u64::try_from(output.content_length().unwrap_or(-1)).ok();
     on_progress(0, total);
     let temp_path = parent.join(format!(
-        ".cloudstore-{}-{}.part",
+        ".{}-{}-{}.part",
+        crate::constants::APP_NAME,
         std::process::id(),
         NEXT_TEMP_FILE_ID.fetch_add(1, Ordering::Relaxed)
     ));

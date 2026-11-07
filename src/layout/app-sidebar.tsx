@@ -3,7 +3,6 @@ import type { View } from '@/types/view'
 import {
   ClockCounterClockwiseIcon,
   CloudArrowUpIcon,
-  CloudIcon,
   DatabaseIcon,
   FoldersIcon,
   GearSixIcon,
@@ -12,6 +11,7 @@ import {
 } from '@phosphor-icons/react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import anybuckLogo from '@/assets/logo.png'
 import { RenameConnectionDialog } from '@/components/connection/rename-connection-dialog'
 import { ProviderLogo } from '@/components/providers/provider-logo'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
@@ -34,21 +34,24 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import i18n from '@/i18n'
+import { cn } from '@/lib/utils'
 
 interface AppSidebarProps {
   view: View
   connections: StorageConnectionEntry[]
+  savedConnectionIds: ReadonlySet<string>
   connectingConnectionIds: ReadonlySet<string>
   activeConnectionId: string
   onViewChange: (view: View) => void
   onConnectionChange: (connectionId: string) => void
   onManageConnection: (connectionId: string) => void
+  onEditConnection: (connectionId: string) => void
   onConnectConnection: (connectionId: string) => void
   onDisconnectConnection: (connectionId: string) => void
-  onAddConnection: (provider?: StorageProvider) => void
+  onAddConnection: () => void
 }
 
-export function AppSidebar({ view, connections, connectingConnectionIds, activeConnectionId, onViewChange, onConnectionChange, onManageConnection, onConnectConnection, onDisconnectConnection, onAddConnection }: AppSidebarProps) {
+export function AppSidebar({ view, connections, savedConnectionIds, connectingConnectionIds, activeConnectionId, onViewChange, onConnectionChange, onManageConnection, onEditConnection, onConnectConnection, onDisconnectConnection, onAddConnection }: AppSidebarProps) {
   const { t } = useTranslation()
   const { setOpenMobile } = useSidebar()
   const [expandedProviders, setExpandedProviders] = useState<StorageProvider[]>([
@@ -89,10 +92,9 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
     selectConnection(item.connectionId)
   }
 
-  function openConnectionDialog(provider: StorageProvider = 'cloudflare-r2') {
-    setExpandedProviders(expanded => (expanded.includes(provider) ? expanded : [...expanded, provider]))
+  function openConnectionDialog() {
     setOpenMobile(false)
-    onAddConnection(provider)
+    onAddConnection()
   }
 
   function manageConnection(connectionId: string) {
@@ -100,15 +102,22 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
     onManageConnection(connectionId)
   }
 
+  function editConnection(connectionId: string) {
+    setOpenMobile(false)
+    onEditConnection(connectionId)
+  }
+
   return (
     <Sidebar collapsible="offcanvas">
       <SidebarHeader className="gap-4 p-4">
         <div className="flex items-center gap-3 px-1 py-1">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-linear-to-br from-[#ff9d61] to-[#ea6636] text-white shadow-[0_8px_20px_#e86b3435]">
-            <CloudIcon className="size-5" weight="fill" />
-          </span>
+          <img
+            src={anybuckLogo}
+            alt="AnyBuck"
+            className="size-9 object-contain select-none"
+          />
           <div className="flex min-w-0 flex-col">
-            <strong className="text-sm tracking-tight text-sidebar-accent-foreground">cloudstore</strong>
+            <strong className="text-sm tracking-tight text-sidebar-accent-foreground">AnyBuck</strong>
             <span className="text-xs text-sidebar-foreground">{t('nav.subtitle')}</span>
           </div>
         </div>
@@ -175,7 +184,7 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                                 <SidebarMenuSubButton
                                   render={<button type="button" />}
                                   isActive={selectedConnectionId === item.connectionId || (view === 'files' && activeConnectionId === item.connectionId)}
-                                  className="w-full [&>svg]:text-sidebar-foreground data-active:[&>svg]:text-sidebar-primary"
+                                  className="w-full"
                                   aria-busy={connectingConnectionIds.has(item.connectionId)}
                                   onClick={() => selectConnectionItem(item)}
                                   onDoubleClick={() => onConnectConnection(item.connectionId)}
@@ -183,18 +192,17 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                                 />
                               )}
                             >
-                              <DatabaseIcon />
+                              <span
+                                role="status"
+                                aria-label={connectingConnectionIds.has(item.connectionId) ? t('nav.connecting') : item.connected ? t('nav.connected') : t('nav.disconnected')}
+                                title={connectingConnectionIds.has(item.connectionId) ? t('nav.connecting') : item.connected ? t('nav.connected') : t('nav.disconnected')}
+                                className={cn('shrink-0', (connectingConnectionIds.has(item.connectionId) || item.connected) && 'text-primary')}
+                              >
+                                {connectingConnectionIds.has(item.connectionId)
+                                  ? <SpinnerIcon className="size-4 animate-spin" />
+                                  : <DatabaseIcon className="size-4" weight={item.connected ? 'fill' : 'regular'} />}
+                              </span>
                               <span className="min-w-0 flex-1 truncate text-left">{item.name}</span>
-                              {connectingConnectionIds.has(item.connectionId)
-                                ? <SpinnerIcon className="size-3.5 shrink-0 animate-spin text-primary" role="status" aria-label={t('nav.connecting')} />
-                                : (
-                                    <span
-                                      role="status"
-                                      aria-label={item.connected ? t('nav.connected') : t('nav.disconnected')}
-                                      title={item.connected ? t('nav.connected') : t('nav.disconnected')}
-                                      className={`size-2 shrink-0 rounded-full ${item.connected ? 'bg-emerald-500' : 'bg-muted-foreground/50'}`}
-                                    />
-                                  )}
                             </ContextMenuTrigger>
                             <ContextMenuContent>
                               {item.connected
@@ -206,6 +214,9 @@ export function AppSidebar({ view, connections, connectingConnectionIds, activeC
                                   )
                                 : <ContextMenuItem onClick={() => onConnectConnection(item.connectionId)}>{t('nav.connect')}</ContextMenuItem>}
                               <ContextMenuItem onClick={() => setRenamingConnection(item)}>{t('nav.rename')}</ContextMenuItem>
+                              {savedConnectionIds.has(item.connectionId) && (
+                                <ContextMenuItem onClick={() => editConnection(item.connectionId)}>{t('common.edit')}</ContextMenuItem>
+                              )}
                               <ContextMenuItem onClick={() => manageConnection(item.connectionId)}>{t('nav.manageConnection')}</ContextMenuItem>
                             </ContextMenuContent>
                           </ContextMenu>

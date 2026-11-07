@@ -19,7 +19,7 @@ pub(crate) async fn prepare_connection(
         secret_access_key,
         None,
         None,
-        "cloudstore-oss",
+        crate::constants::provider_client_label("oss"),
     );
     let shared_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
         .endpoint_url(&endpoint)

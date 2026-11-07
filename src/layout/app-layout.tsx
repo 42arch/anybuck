@@ -1,6 +1,5 @@
-import type { StorageProvider } from '@/types/connection'
 import type { View } from '@/types/view'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { ConnectionDialog } from '@/components/connection/connection-dialog'
@@ -25,7 +24,11 @@ export function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const openConnectionDialog = useConnectionDialogStore(state => state.openDialog)
-  const { connection, connections, selectConnection, connectSavedConnection, disconnectConnection } = useStorageConnection()
+  const connectionDialogInstance = useConnectionDialogStore(state => state.dialogInstance)
+  const { connection, connections, savedConnections, selectConnection, connectSavedConnection, disconnectConnection } = useStorageConnection()
+  const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null)
+  const editingProfile = savedConnections.find(profile => profile.id === editingConnectionId)
+  const savedConnectionIds = new Set(savedConnections.map(profile => profile.id))
   const view = viewFromPath(location.pathname)
 
   const { connectingConnectionIds, connectStorageConnection, disconnectStorageConnection } = useConnectionActions({
@@ -58,14 +61,16 @@ export function AppLayout() {
       <AppSidebar
         view={view}
         connections={connections}
+        savedConnectionIds={savedConnectionIds}
         connectingConnectionIds={connectingConnectionIds}
         activeConnectionId={connection?.connectionId ?? ''}
         onViewChange={navigateToView}
         onConnectionChange={selectStorageConnection}
         onManageConnection={() => navigateToView('settings')}
+        onEditConnection={setEditingConnectionId}
         onConnectConnection={connectionId => void connectStorageConnection(connectionId)}
         onDisconnectConnection={connectionId => void disconnectStorageConnection(connectionId)}
-        onAddConnection={(provider?: StorageProvider) => openConnectionDialog(provider)}
+        onAddConnection={openConnectionDialog}
       />
       <SidebarInset className="h-svh min-h-0 min-w-0 overflow-hidden bg-background">
         <AppHeader
@@ -87,7 +92,15 @@ export function AppLayout() {
           </div>
         </div>
       </SidebarInset>
-      <ConnectionDialog />
+      <ConnectionDialog key={connectionDialogInstance} />
+      {editingProfile && (
+        <ConnectionDialog
+          key={editingProfile.id}
+          open
+          editProfile={editingProfile}
+          onOpenChange={open => !open && setEditingConnectionId(null)}
+        />
+      )}
       <TransferConfirmationDialogs />
     </SidebarProvider>
   )

@@ -105,7 +105,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           tagName: v__VERSION__
-          releaseName: Cloudstore v__VERSION__
+          releaseName: AnyBuck v__VERSION__
           releaseBody: ${{ steps.changelog.outputs.changes }}
           releaseDraft: true
           prerelease: false

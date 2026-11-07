@@ -3,10 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="theme-color" content="#f7f8fa" />
     <script>
       try {
-        const preference = JSON.parse(localStorage.getItem('cloudstore-settings') || '{}').state?.theme
+        const preference = JSON.parse(localStorage.getItem('anybuck-settings') || localStorage.getItem('cloudstore-settings') || '{}').state?.theme
         const dark = preference === 'dark' || (preference === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
         document.documentElement.classList.toggle('dark', dark)
         document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
@@ -15,7 +16,7 @@
       }
       catch {}
     </script>
-    <title>Cloudstore — 对象存储工作台</title>
+    <title>AnyBuck — 对象存储工作台</title>
   </head>
   <body>
     <div id="root"></div>

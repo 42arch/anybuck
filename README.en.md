@@ -1,6 +1,6 @@
 <div align="center">
 
-# CloudStore
+# AnyBuck
 
 **Local-First Cross-Cloud Object Storage Desktop Client**
 
@@ -20,13 +20,13 @@ English | [简体中文](./README.md)
 </p>
 
 <p align="center">
-  CloudStore is a cross-cloud object storage desktop client built with Tauri 2, Rust, and React 19.<br/>
+  AnyBuck is a cross-cloud object storage desktop client built with Tauri 2, Rust, and React 19.<br/>
   It supports unified multi-cloud management, streaming transfers, and cross-provider data migration.
 </p>
 
 <!-- UI Preview Placeholder -->
 <p align="center">
-  <img src="docs/preview.png" alt="CloudStore Preview" width="820" onerror="this.style.display='none'" />
+  <img src="docs/preview.png" alt="AnyBuck Preview" width="820" onerror="this.style.display='none'" />
 </p>
 
 </div>
@@ -45,7 +45,7 @@ English | [简体中文](./README.md)
 
 ## 🛡️ Security & Credentials
 
-CloudStore uses a **Local-First** architecture:
+AnyBuck uses a **Local-First** architecture:
 
 1. **Direct Storage Endpoints**: All requests connect directly from the client to cloud provider API endpoints without intermediate relay servers or telemetry collection.
 2. **OS-Native Keyring**: Credentials are saved in operating system credential stores instead of plaintext local files:

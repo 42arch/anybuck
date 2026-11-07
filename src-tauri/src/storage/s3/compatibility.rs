@@ -17,7 +17,7 @@ use std::{
 };
 
 static NEXT_PROBE_ID: AtomicU64 = AtomicU64::new(1);
-const SAMPLE: &[u8] = b"cloudstore compatibility probe\n";
+const SAMPLE: &[u8] = crate::constants::COMPAT_PROBE_SAMPLE;
 const LARGE_SIZE: u64 = 100 * 1024 * 1024;
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -175,7 +175,8 @@ fn probe_prefix() -> String {
         .map(|value| value.as_nanos())
         .unwrap_or_default();
     format!(
-        "__cloudstore-compat/{time}-{}-{}/",
+        "{}/{time}-{}-{}/",
+        crate::constants::COMPAT_PROBE_PREFIX,
         std::process::id(),
         NEXT_PROBE_ID.fetch_add(1, Ordering::Relaxed)
     )
@@ -505,7 +506,8 @@ async fn copy_delete(
 
 async fn multipart_upload(resources: &mut ProbeResources) -> Result<&'static str, Failure> {
     let path = std::env::temp_dir().join(format!(
-        "cloudstore-compat-{}-{}.bin",
+        "{}-compat-{}-{}.bin",
+        crate::constants::APP_NAME,
         std::process::id(),
         NEXT_PROBE_ID.fetch_add(1, Ordering::Relaxed)
     ));
@@ -791,7 +793,7 @@ mod tests {
     fn probe_prefix_is_unique_and_isolated() {
         let first = probe_prefix();
         let second = probe_prefix();
-        assert!(first.starts_with("__cloudstore-compat/"));
+        assert!(first.starts_with(crate::constants::COMPAT_PROBE_PREFIX));
         assert!(first.ends_with('/'));
         assert_ne!(first, second);
     }

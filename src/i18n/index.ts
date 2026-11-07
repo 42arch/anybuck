@@ -18,7 +18,7 @@ export function resolveLanguage(preference: LanguagePreference): AppLanguage {
 function applyLanguage(preference: LanguagePreference) {
   const language = resolveLanguage(preference)
   document.documentElement.lang = language
-  document.title = language === 'zh-CN' ? 'Cloudstore — 对象存储工作台' : 'Cloudstore — Object Storage Workspace'
+  document.title = language === 'zh-CN' ? 'AnyBuck — 对象存储工作台' : 'AnyBuck — Object Storage Workspace'
   if (i18n.isInitialized && i18n.language !== language)
     void i18n.changeLanguage(language)
 }

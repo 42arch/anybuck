@@ -1,5 +1,5 @@
 {
-  "name": "cloudstore",
+  "name": "anybuck",
   "type": "module",
   "version": "0.0.3",
   "private": true,
@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "icon": "python3 scripts/generate-icons.py",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",

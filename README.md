@@ -1,6 +1,6 @@
 <div align="center">
 
-# CloudStore
+# AnyBuck
 
 **本地优先的跨云对象存储桌面客户端**
 
@@ -20,13 +20,13 @@
 </p>
 
 <p align="center">
-  CloudStore 是一个基于 Tauri 2 + Rust + React 19 构建的跨云对象存储桌面客户端。<br/>
+  AnyBuck 是一个基于 Tauri 2 + Rust + React 19 构建的跨云对象存储桌面客户端。<br/>
   支持多云存储统一管理、文件流式传输以及跨服务商数据迁移。
 </p>
 
 <!-- 界面预览区域 -->
 <p align="center">
-  <img src="docs/preview.png" alt="CloudStore Preview" width="820" onerror="this.style.display='none'" />
+  <img src="docs/preview.png" alt="AnyBuck Preview" width="820" onerror="this.style.display='none'" />
 </p>
 
 </div>
@@ -45,7 +45,7 @@
 
 ## 🛡️ 安全与凭据管理
 
-CloudStore 使用**本地优先（Local-First）**架构：
+AnyBuck 使用**本地优先（Local-First）**架构：
 
 1. **直连存储端点**：所有请求由客户端直接发送至各云服务商 API 端点，无中转后端服务，亦不包含数据遥测。
 2. **系统凭据库存储**：访问密钥保存在操作系统安全凭据库中，不以明文写入本地配置文件：
