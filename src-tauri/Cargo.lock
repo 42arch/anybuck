@@ -54,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "anybuck"
-version = "0.0.3"
+version = "1.0.0"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",

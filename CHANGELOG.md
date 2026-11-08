@@ -1,6 +1,25 @@
 # Changelog
 
 
+## v1.0.0
+
+### 简体中文
+
+### 🚀 Enhancements
+
+- 更新品牌名称为 **AnyBuck** ([457cd56](https://github.com/42arch/cloudstore/commit/457cd56))
+
+### English
+
+### 🚀 Enhancements
+
+- Rebrand application from cloudstore to anybuck ([457cd56](https://github.com/42arch/cloudstore/commit/457cd56))
+
+### ❤️ Contributors
+
+- 42arch ([@42arch](https://github.com/42arch))
+
+
 ## v0.0.3
 
 ### 🚀 Enhancements
